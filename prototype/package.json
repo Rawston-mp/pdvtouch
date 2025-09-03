@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host",
-    "mock": "json-server --watch db.json --port 3333",
-    "dev:all": "concurrently -n WEB,API -c auto \"npm:dev\" \"npm:mock\""
+    "mock:ws": "node mock/ws-server.js",
+    "dev:all": "concurrently -n WEB,WS -c auto \"npm:dev\" \"npm:mock:ws\""
   },
   "dependencies": {
     "react": "^19.1.1",

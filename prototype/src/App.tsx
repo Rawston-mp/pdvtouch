@@ -1,4 +1,5 @@
-import { Routes, Route, NavLink } from 'react-router-dom'
+import { useEffect } from 'react'
+import { NavLink, Routes, Route } from 'react-router-dom'
 import VendaRapida from './pages/VendaRapida'
 import Finalizacao from './pages/Finalizacao'
 import Relatorios from './pages/Relatorios'
@@ -6,10 +7,30 @@ import Impressao from './pages/Impressao'
 import Admin from './pages/Admin'
 import Sync from './pages/Sync'
 
+// opcional: simulação de processamento de outbox
+async function processOutboxMock() {
+  // ex.: import { processOutbox } from './db/outbox' e chamar aqui
+  // por enquanto, fica vazio
+}
+
 export default function App() {
+  useEffect(() => {
+    const id = setInterval(() => { processOutboxMock().catch(() => {}) }, 4000)
+    return () => clearInterval(id)
+  }, [])
+
   return (
     <div style={{ display: 'grid', gridTemplateRows: '64px 1fr', height: '100vh' }}>
-      <nav style={{ display: 'flex', gap: 12, alignItems: 'center', padding: 12, borderBottom: '1px solid #ddd' }}>
+      {/* Navbar */}
+      <nav
+        style={{
+          display: 'flex',
+          gap: 12,
+          alignItems: 'center',
+          padding: 12,
+          borderBottom: '1px solid #ddd',
+        }}
+      >
         <strong>PDVTouch (Protótipo)</strong>
         <NavLink to="/" end>Venda</NavLink>
         <NavLink to="/finalizacao">Finalização</NavLink>
@@ -19,6 +40,7 @@ export default function App() {
         <NavLink to="/sync">Sync</NavLink>
       </nav>
 
+      {/* Rotas */}
       <Routes>
         <Route path="/" element={<VendaRapida />} />
         <Route path="/finalizacao" element={<Finalizacao />} />
