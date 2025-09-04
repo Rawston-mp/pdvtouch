@@ -1,5 +1,5 @@
 import Dexie, { Table } from 'dexie'
-import { Order, OutboxEvent } from './models'
+import type { Order, OutboxEvent } from './models'
 
 class PDVDB extends Dexie {
   orders!: Table<Order, string>

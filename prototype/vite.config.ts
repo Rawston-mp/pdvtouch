@@ -5,7 +5,10 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
-    host: true,      // torna acessível na rede/Windows
-    port: 5173
+    host: true,
+    port: 5173,
+  },
+  optimizeDeps: {
+    include: ['zod']
   }
 })

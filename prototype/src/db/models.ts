@@ -2,9 +2,10 @@ export type OrderItem = {
   id: string
   productId: number
   name: string
-  qty: number
+  qty: number           // se por peso: kg (3 casas)
   unitPrice: number
   total: number
+  isWeight: boolean
 }
 
 export type Payment = {
@@ -26,7 +27,7 @@ export type Order = {
 }
 
 export type OutboxEvent = {
-  id: string       // uuid
+  id: string           // uuid
   type: 'ORDER_PAID' | 'ORDER_CANCELED' | 'SYNC_HEARTBEAT'
   payload: any
   createdAt: number

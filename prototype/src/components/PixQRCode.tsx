@@ -1,12 +1,12 @@
 import QRCode from 'react-qr-code'
 
 type Props = {
-  payload: string              // payload EMV do PIX
+  payload: string
   size?: number
   caption?: string
 }
 
-export default function PixQRCode({ payload, size = 180, caption }: Props) {
+export default function PixQRCode({ payload, size = 200, caption }: Props) {
   return (
     <div style={{ display: 'grid', justifyItems: 'center', gap: 8 }}>
       <QRCode value={payload} size={size} />
