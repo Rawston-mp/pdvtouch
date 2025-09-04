@@ -8,8 +8,8 @@ type Product = {
   id: number
   name: string
   category: 'Pratos' | 'Bebidas' | 'Sobremesas' | 'Por Peso'
-  price?: number
-  pricePerKg?: number
+  price?: number          // preço unitário
+  pricePerKg?: number     // preço por kg (quando for por peso)
 }
 
 type CartItem = {
@@ -17,7 +17,7 @@ type CartItem = {
   productId: number
   name: string
   unitPrice: number
-  qty: number
+  qty: number             // se por peso: kg (3 casas)
   total: number
   isWeight: boolean
 }
@@ -39,11 +39,12 @@ export default function VendaRapida() {
   const [activeCategory, setActiveCategory] = useState<Product['category']>('Pratos')
   const [query, setQuery] = useState('')
   const [cart, setCart] = useState<CartItem[]>([])
-  const [qtyInput, setQtyInput] = useState('')
+  const [qtyInput, setQtyInput] = useState('') // teclado numérico p/ unitários
   const [pendingProduct, setPendingProduct] = useState<Product | null>(null)
   const [readingWeight, setReadingWeight] = useState(false)
   const [lastWeight, setLastWeight] = useState<number | null>(null)
 
+  // filtro por categoria + busca
   const filteredProducts = useMemo(() => {
     const list = PRODUCTS.filter(p => p.category === activeCategory)
     if (!query.trim()) return list
@@ -73,21 +74,23 @@ export default function VendaRapida() {
     const priceKg = prod.pricePerKg ?? 0
     try {
       setReadingWeight(true)
+      console.log('[Balança] lendo para:', prod.name)
       const kg = await requestWeight()
+      console.log('[Balança] valor recebido:', kg)
       setLastWeight(kg)
-      const total = round2(kg * priceKg)
       const item: CartItem = {
         id: crypto.randomUUID(),
         productId: prod.id,
         name: `${prod.name} (${kg.toFixed(3)} kg)`,
         unitPrice: priceKg,
         qty: parseFloat(kg.toFixed(3)),
-        total,
+        total: round2(kg * priceKg),
         isWeight: true
       }
       setCart(prev => [...prev, item])
-    } catch {
-      alert('Falha ao ler balança (mock). Rode: npm run mock:ws')
+    } catch (e) {
+      console.error('[Balança] erro:', e)
+      alert('Falha ao ler balança (mock). Verifique se o WS está rodando: npm run mock:ws')
     } finally {
       setReadingWeight(false)
       setPendingProduct(null)
@@ -95,6 +98,7 @@ export default function VendaRapida() {
   }
 
   function onSelectProduct(prod: Product) {
+    console.log('[UI] selecionado:', prod)
     if (prod.category === 'Por Peso') {
       setPendingProduct(prod)
     } else {
@@ -104,7 +108,9 @@ export default function VendaRapida() {
 
   function inc(itemId: string) {
     setCart(prev =>
-      prev.map(i => i.id === itemId ? { ...i, qty: i.qty + 1, total: round2((i.qty + 1) * i.unitPrice) } : i)
+      prev.map(i =>
+        i.id === itemId ? { ...i, qty: i.qty + 1, total: round2((i.qty + 1) * i.unitPrice) } : i
+      )
     )
   }
   function dec(itemId: string) {
@@ -145,6 +151,7 @@ export default function VendaRapida() {
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '2.2fr 1fr', height: 'calc(100vh - 64px)' }}>
+      {/* ESQUERDA: categorias, busca e grid de produtos */}
       <section style={{ padding: 16, overflow: 'auto' }}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
           {CATEGORIES.map(cat => (
@@ -200,7 +207,9 @@ export default function VendaRapida() {
         </div>
       </section>
 
+      {/* DIREITA: carrinho + teclado + peso + ações */}
       <aside style={{ borderLeft: '1px solid #eee', padding: 16, display: 'grid', gridTemplateRows: 'auto auto 1fr auto auto', gap: 12 }}>
+        {/* Teclado numérico para unitários */}
         <div>
           <div style={{ marginBottom: 6, fontWeight: 600 }}>Quantidade rápida (itens unitários)</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 12 }}>
@@ -222,12 +231,15 @@ export default function VendaRapida() {
           <small style={{ opacity: 0.8 }}>Dica: selecione um produto unitário após definir a quantidade.</small>
         </div>
 
+        {/* Leitura de peso */}
         <div style={{ borderTop: '1px dashed #ddd', paddingTop: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <strong>Peso (balança)</strong>
-            {pendingProduct && <span style={{ fontSize: 12, padding: '2px 6px', background: '#eef', borderRadius: 6 }}>
-              pendente: {pendingProduct.name}
-            </span>}
+            {pendingProduct && (
+              <span style={{ fontSize: 12, padding: '2px 6px', background: '#eef', borderRadius: 6 }}>
+                pendente: {pendingProduct.name}
+              </span>
+            )}
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
             <button
@@ -235,13 +247,18 @@ export default function VendaRapida() {
               disabled={!pendingProduct || readingWeight}
               style={{ padding: '10px 14px', borderRadius: 8, cursor: pendingProduct ? 'pointer' : 'not-allowed' }}
             >
-              {readingWeight ? 'Lendo...' : 'Ler peso (mock)'}
+              {readingWeight
+                ? 'Lendo...'
+                : pendingProduct
+                  ? `Ler peso (${pendingProduct.name})`
+                  : 'Selecione um item por peso'}
             </button>
             {lastWeight != null && <div><b>{lastWeight.toFixed(3)} kg</b></div>}
           </div>
           <small style={{ opacity: 0.8 }}>Requer o mock WS: <code>npm run mock:ws</code></small>
         </div>
 
+        {/* Carrinho */}
         <div style={{ overflow: 'auto' }}>
           <h3 style={{ marginBottom: 8 }}>Carrinho</h3>
           {cart.length === 0 && <div style={{ opacity: 0.7 }}>Nenhum item.</div>}
@@ -268,6 +285,7 @@ export default function VendaRapida() {
           </ul>
         </div>
 
+        {/* Total */}
         <div style={{ borderTop: '1px dashed #ddd', paddingTop: 12 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 18 }}>
             <span>Total</span>
@@ -275,6 +293,7 @@ export default function VendaRapida() {
           </div>
         </div>
 
+        {/* Ações */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <button onClick={imprimirCupomDemo} style={btnPrimary}>Imprimir cupom (mock)</button>
           <button onClick={clearCart} style={btnLight}>Limpar</button>
@@ -287,9 +306,29 @@ export default function VendaRapida() {
   )
 }
 
+/* ===== utils & estilos ===== */
 function round2(n: number) { return Math.round(n * 100) / 100 }
 function truncate(s: string, len: number) { return s.length > len ? s.slice(0, len - 1) + '…' : s }
 
-const btnSm: React.CSSProperties = { padding: '6px 10px', borderRadius: 8, border: '1px solid #ddd', background: '#fff', cursor: 'pointer' }
-const btnPrimary: React.CSSProperties = { padding: '12px 14px', borderRadius: 10, border: '1px solid #0b5', background: '#0b5', color: '#fff', cursor: 'pointer' }
-const btnLight: React.CSSProperties = { padding: '12px 14px', borderRadius: 10, border: '1px solid #ddd', background: '#fff', cursor: 'pointer' }
+const btnSm: React.CSSProperties = {
+  padding: '6px 10px',
+  borderRadius: 8,
+  border: '1px solid #ddd',
+  background: '#fff',
+  cursor: 'pointer'
+}
+const btnPrimary: React.CSSProperties = {
+  padding: '12px 14px',
+  borderRadius: 10,
+  border: '1px solid #0b5',
+  background: '#0b5',
+  color: '#fff',
+  cursor: 'pointer'
+}
+const btnLight: React.CSSProperties = {
+  padding: '12px 14px',
+  borderRadius: 10,
+  border: '1px solid #ddd',
+  background: '#fff',
+  cursor: 'pointer'
+}
