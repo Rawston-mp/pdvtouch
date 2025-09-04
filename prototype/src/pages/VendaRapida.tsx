@@ -1,16 +1,11 @@
+// src/pages/VendaRapida.tsx
 import { useEffect, useMemo, useState } from 'react'
 import TecladoNumerico from '../components/TecladoNumerico'
 import { requestWeight, printText } from '../mock/devices'
 import { Link } from 'react-router-dom'
 import { saveCart } from '../lib/cartStorage'
-
-type Product = {
-  id: number
-  name: string
-  category: 'Pratos' | 'Bebidas' | 'Sobremesas' | 'Por Peso'
-  price?: number
-  pricePerKg?: number
-}
+import { CATEGORIES, ensureSeed, listProducts } from '../db/products'
+import type { Product } from '../db/models'
 
 type CartItem = {
   id: string
@@ -22,19 +17,6 @@ type CartItem = {
   isWeight: boolean
 }
 
-const CATEGORIES: Array<Product['category']> = ['Pratos', 'Bebidas', 'Sobremesas', 'Por Peso']
-
-const PRODUCTS: Product[] = [
-  { id: 1, name: 'Prato Executivo', category: 'Pratos', price: 24.9 },
-  { id: 2, name: 'Guarnição do Dia', category: 'Pratos', price: 12.0 },
-  { id: 3, name: 'Suco Natural 300ml', category: 'Bebidas', price: 8.0 },
-  { id: 4, name: 'Refrigerante Lata', category: 'Bebidas', price: 6.5 },
-  { id: 5, name: 'Pudim', category: 'Sobremesas', price: 9.0 },
-  { id: 6, name: 'Mousse', category: 'Sobremesas', price: 7.5 },
-  { id: 101, name: 'Self-service por Kg', category: 'Por Peso', pricePerKg: 69.9 },
-  { id: 102, name: 'Churrasco por Kg', category: 'Por Peso', pricePerKg: 89.9 }
-]
-
 export default function VendaRapida() {
   const [activeCategory, setActiveCategory] = useState<Product['category']>('Pratos')
   const [query, setQuery] = useState('')
@@ -43,20 +25,33 @@ export default function VendaRapida() {
   const [pendingProduct, setPendingProduct] = useState<Product | null>(null)
   const [readingWeight, setReadingWeight] = useState(false)
   const [lastWeight, setLastWeight] = useState<number | null>(null)
+  const [products, setProducts] = useState<Product[]>([])
+  const [loading, setLoading] = useState(true)
+
+  async function refreshProducts() {
+    setLoading(true)
+    const list = await listProducts(true)
+    setProducts(list)
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    (async () => {
+      await refreshProducts()
+    })()
+  }, [])
 
   const filteredProducts = useMemo(() => {
-    const list = PRODUCTS.filter(p => p.category === activeCategory)
-    if (!query.trim()) return list
+    const byCat = products.filter(p => p.category === activeCategory)
+    if (!query.trim()) return byCat
     const q = query.toLowerCase()
-    return list.filter(p => p.name.toLowerCase().includes(q))
-  }, [activeCategory, query])
+    return byCat.filter(p => p.name.toLowerCase().includes(q))
+  }, [products, activeCategory, query])
 
   const total = useMemo(() => cart.reduce((acc, i) => acc + i.total, 0), [cart])
 
-  // >>> persistência simples do carrinho
   useEffect(() => {
-    const items = cart.map<CartItem>((i) => ({ ...i }))
-    saveCart({ items: items as any, total })
+    saveCart({ items: cart as any, total })
   }, [cart, total])
 
   function addUnitProduct(prod: Product) {
@@ -64,7 +59,7 @@ export default function VendaRapida() {
     const price = prod.price ?? 0
     const item: CartItem = {
       id: crypto.randomUUID(),
-      productId: prod.id,
+      productId: prod.id!,
       name: prod.name,
       unitPrice: price,
       qty,
@@ -83,7 +78,7 @@ export default function VendaRapida() {
       setLastWeight(kg)
       const item: CartItem = {
         id: crypto.randomUUID(),
-        productId: prod.id,
+        productId: prod.id!,
         name: `${prod.name} (${kg.toFixed(3)} kg)`,
         unitPrice: priceKg,
         qty: parseFloat(kg.toFixed(3)),
@@ -91,7 +86,7 @@ export default function VendaRapida() {
         isWeight: true
       }
       setCart(prev => [...prev, item])
-    } catch (e) {
+    } catch {
       alert('Falha ao ler balança (mock). Verifique se o WS está rodando: npm run mock:ws')
     } finally {
       setReadingWeight(false)
@@ -106,9 +101,7 @@ export default function VendaRapida() {
 
   function inc(itemId: string) {
     setCart(prev =>
-      prev.map(i =>
-        i.id === itemId ? { ...i, qty: i.qty + 1, total: round2((i.qty + 1) * i.unitPrice) } : i
-      )
+      prev.map(i => i.id === itemId ? { ...i, qty: i.qty + 1, total: round2((i.qty + 1) * i.unitPrice) } : i)
     )
   }
   function dec(itemId: string) {
@@ -147,23 +140,36 @@ export default function VendaRapida() {
     alert('Cupom enviado (mock). Veja o terminal do WS.')
   }
 
+  // ====== RENDER ======
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '2.2fr 1fr', height: 'calc(100vh - 64px)' }}>
       {/* esquerda */}
       <section style={{ padding: 16, overflow: 'auto' }}>
+        {/* Banner de catálogo vazio / seed */}
+        {!loading && products.length === 0 && (
+          <div style={{
+            padding: 12, border: '1px solid #f0c36d', background: '#fff8e1',
+            borderRadius: 10, marginBottom: 12
+          }}>
+            <b>Catálogo vazio.</b> <span> Carregue o seed para continuar.</span>{' '}
+            <button
+              onClick={async () => { await ensureSeed(); await refreshProducts() }}
+              style={{ marginLeft: 8, padding: '6px 10px', borderRadius: 8, cursor: 'pointer' }}
+            >
+              Carregar catálogo (seed)
+            </button>
+          </div>
+        )}
+
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
           {CATEGORIES.map(cat => (
             <button
               key={cat}
               onClick={() => setActiveCategory(cat)}
               style={{
-                padding: '10px 14px',
-                fontSize: 16,
-                borderRadius: 8,
-                border: '1px solid #ddd',
+                padding: '10px 14px', fontSize: 16, borderRadius: 8, border: '1px solid #ddd',
                 background: activeCategory === cat ? '#222' : '#fff',
-                color: activeCategory === cat ? '#fff' : '#222',
-                cursor: 'pointer'
+                color: activeCategory === cat ? '#fff' : '#222', cursor: 'pointer'
               }}
             >
               {cat}
@@ -180,29 +186,27 @@ export default function VendaRapida() {
           />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-          {filteredProducts.map(p => (
-            <button
-              key={p.id}
-              onClick={() => onSelectProduct(p)}
-              style={{
-                height: 90,
-                border: '1px solid #e5e5e5',
-                borderRadius: 12,
-                fontSize: 16,
-                textAlign: 'left',
-                padding: 12,
-                cursor: 'pointer',
-                background: '#fff'
-              }}
-            >
-              <div style={{ fontWeight: 600, marginBottom: 8 }}>{p.name}</div>
-              {p.category === 'Por Peso'
-                ? <div>R$ {p.pricePerKg?.toFixed(2)} / kg</div>
-                : <div>R$ {p.price?.toFixed(2)}</div>}
-            </button>
-          ))}
-        </div>
+        {loading ? (
+          <div style={{ opacity: 0.7 }}>Carregando catálogo…</div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+            {filteredProducts.map(p => (
+              <button
+                key={p.id}
+                onClick={() => onSelectProduct(p)}
+                style={{
+                  height: 90, border: '1px solid #e5e5e5', borderRadius: 12,
+                  fontSize: 16, textAlign: 'left', padding: 12, cursor: 'pointer', background: '#fff'
+                }}
+              >
+                <div style={{ fontWeight: 600, marginBottom: 8 }}>{p.name}</div>
+                {p.category === 'Por Peso'
+                  ? <div>R$ {p.pricePerKg?.toFixed(2)} / kg</div>
+                  : <div>R$ {p.price?.toFixed(2)}</div>}
+              </button>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* direita */}

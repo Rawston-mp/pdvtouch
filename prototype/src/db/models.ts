@@ -1,3 +1,18 @@
+// src/db/models.ts
+
+// ---- Catálogo ----
+export type Category = 'Pratos' | 'Bebidas' | 'Sobremesas' | 'Por Peso'
+
+export type Product = {
+  id?: number            // auto-increment (Dexie)
+  name: string
+  category: Category
+  price?: number         // preço unitário
+  pricePerKg?: number    // se "Por Peso"
+  active: boolean
+}
+
+// ---- Venda ----
 export type OrderItem = {
   id: string
   productId: number
@@ -26,6 +41,7 @@ export type Order = {
   notes?: string
 }
 
+// ---- Outbox ----
 export type OutboxEvent = {
   id: string           // uuid
   type: 'ORDER_PAID' | 'ORDER_CANCELED' | 'SYNC_HEARTBEAT'
