@@ -13,7 +13,7 @@ export type Product = {
   price?: number
   pricePerKg?: number
   active: boolean
-  route?: Destination        // <- destino padrão do item
+  route?: Destination        // destino padrão do item
 }
 
 // ---- Venda ----
@@ -25,16 +25,23 @@ export type OrderItem = {
   unitPrice: number
   total: number
   isWeight: boolean
-  route?: Destination        // <- resolvido na venda a partir do produto
+  route?: Destination
 }
 
+export type PaymentMethod = 'CASH' | 'TEF' | 'PIX' | 'VOUCHER'
 export type Payment = {
   id: string
-  method: 'CASH' | 'TEF' | 'PIX' | 'VOUCHER'
+  method: PaymentMethod
   amount: number
   authCode?: string
   meta?: Record<string, any>
 }
+
+// identificação do cliente p/ cupom fiscal
+export type CustomerIdType = 'CPF' | 'CNPJ' | 'NONE'
+
+// **modo de emissão** do comprovante da venda
+export type ReceiptMode = 'NAO_FISCAL' | 'FISCAL_NFCE' | 'FISCAL_SAT' // SAT: legado
 
 export type Order = {
   id: string
@@ -44,6 +51,11 @@ export type Order = {
   payments: Payment[]
   total: number
   notes?: string
+
+  // campos de cupom
+  receiptMode?: ReceiptMode
+  customerIdType?: CustomerIdType
+  customerTaxId?: string | null // CPF/CNPJ sem máscara
 }
 
 // ---- Outbox ----
@@ -83,8 +95,7 @@ export type PrinterProfile = 'GENERIC' | 'ELGIN' | 'BEMATECH'
 
 export type Printer = {
   id?: number
-  name: string               // ex.: "Caixa"
-  destination: Destination   // CAIXA | COZINHA | BAR
+  name: string
+  destination: Destination
   profile: PrinterProfile
-  // (futuro: host/ip/serial/baud etc.)
 }

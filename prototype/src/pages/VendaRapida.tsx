@@ -1,10 +1,8 @@
 // src/pages/VendaRapida.tsx
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-
 import TecladoNumerico from '../components/TecladoNumerico'
 import { requestWeight, printText } from '../mock/devices'
-import { saveCart } from '../lib/cartStorage'
 import { CATEGORIES, ensureSeed, listProducts } from '../db/products'
 import type { Product, Destination } from '../db/models'
 
@@ -16,7 +14,19 @@ type CartItem = {
   qty: number
   total: number
   isWeight: boolean
-  route?: Destination // <- destino herdado do produto (CAIXA/COZINHA/BAR)
+  route?: Destination
+}
+type CartSnapshot = { items: CartItem[]; total: number }
+
+// ------ helpers de armazenamento ------
+function saveCartLocal(items: CartItem[]) {
+  const total = round2(items.reduce((s, i) => s + i.total, 0))
+  const snap: CartSnapshot = { items, total }
+  localStorage.setItem('pdv_cart', JSON.stringify(snap))
+  return snap
+}
+function clearCartLocal() {
+  localStorage.removeItem('pdv_cart')
 }
 
 export default function VendaRapida() {
@@ -37,10 +47,15 @@ export default function VendaRapida() {
     setLoading(false)
   }
 
+  // carrega catálogo
+  useEffect(() => { refreshProducts() }, [])
+
+  // carrega carrinho salvo (se existir)
   useEffect(() => {
-    (async () => {
-      await refreshProducts()
-    })()
+    try {
+      const snap = JSON.parse(localStorage.getItem('pdv_cart') || 'null') as CartSnapshot | null
+      if (snap?.items?.length) setCart(snap.items)
+    } catch {}
   }, [])
 
   const filteredProducts = useMemo(() => {
@@ -50,12 +65,12 @@ export default function VendaRapida() {
     return byCat.filter(p => p.name.toLowerCase().includes(q))
   }, [products, activeCategory, query])
 
-  const total = useMemo(() => cart.reduce((acc, i) => acc + i.total, 0), [cart])
+  const total = useMemo(() => round2(cart.reduce((acc, i) => acc + i.total, 0)), [cart])
 
-  useEffect(() => {
-    saveCart({ items: cart as any, total })
-  }, [cart, total])
+  // toda mudança no carrinho reflete no localStorage
+  useEffect(() => { saveCartLocal(cart) }, [cart])
 
+  // ---------- ações ----------
   function addUnitProduct(prod: Product) {
     const qty = Math.max(1, Number(qtyInput.replace(',', '.')) || 1)
     const price = prod.price ?? 0
@@ -67,9 +82,10 @@ export default function VendaRapida() {
       qty,
       total: round2(price * qty),
       isWeight: false,
-      route: prod.route // <- herda o destino do produto
+      route: prod.route
     }
-    setCart(prev => [...prev, item])
+    const next = [...cart, item]
+    setCart(next)
     setQtyInput('')
   }
 
@@ -87,9 +103,10 @@ export default function VendaRapida() {
         qty: parseFloat(kg.toFixed(3)),
         total: round2(kg * priceKg),
         isWeight: true,
-        route: prod.route // <- herda o destino do produto
+        route: prod.route
       }
-      setCart(prev => [...prev, item])
+      const next = [...cart, item]
+      setCart(next)
     } catch {
       alert('Falha ao ler balança (mock). Verifique se o WS está rodando: npm run mock:ws')
     } finally {
@@ -104,25 +121,28 @@ export default function VendaRapida() {
   }
 
   function inc(itemId: string) {
-    setCart(prev =>
-      prev.map(i => i.id === itemId ? { ...i, qty: i.qty + 1, total: round2((i.qty + 1) * i.unitPrice) } : i)
-    )
+    const next = cart.map(i => i.id === itemId ? { ...i, qty: i.qty + 1, total: round2((i.qty + 1) * i.unitPrice) } : i)
+    setCart(next)
   }
+
   function dec(itemId: string) {
-    setCart(prev =>
-      prev.flatMap(i => {
-        if (i.id !== itemId) return i
-        const nextQty = i.qty - 1
-        if (nextQty <= 0) return []
-        return { ...i, qty: nextQty, total: round2(nextQty * i.unitPrice) }
-      })
-    )
+    const next: CartItem[] = []
+    for (const i of cart) {
+      if (i.id !== itemId) { next.push(i); continue }
+      const q = i.qty - 1
+      if (q > 0) next.push({ ...i, qty: q, total: round2(q * i.unitPrice) })
+    }
+    setCart(next)
   }
+
   function removeItem(itemId: string) {
-    setCart(prev => prev.filter(i => i.id !== itemId))
+    const next = cart.filter(i => i.id !== itemId)
+    setCart(next)
   }
-  function clearCart() {
+
+  function clearAll() {
     setCart([])
+    clearCartLocal()
     setLastWeight(null)
     setPendingProduct(null)
   }
@@ -145,18 +165,15 @@ export default function VendaRapida() {
     alert('Cupom enviado (mock). Veja o terminal do WS.')
   }
 
-  // ====== RENDER ======
+  // ---------- render ----------
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '2.2fr 1fr', height: 'calc(100vh - 64px)' }}>
       {/* esquerda */}
       <section style={{ padding: 16, overflow: 'auto' }}>
-        {/* Banner de catálogo vazio / seed */}
+        {/* seed quando catálogo vazio */}
         {!loading && products.length === 0 && (
-          <div style={{
-            padding: 12, border: '1px solid #f0c36d', background: '#fff8e1',
-            borderRadius: 10, marginBottom: 12
-          }}>
-            <b>Catálogo vazio.</b> <span> Carregue o seed para continuar.</span>{' '}
+          <div style={{ padding: 12, border: '1px solid #f0c36d', background: '#fff8e1', borderRadius: 10, marginBottom: 12 }}>
+            <b>Catálogo vazio.</b> Carregue o seed para continuar.
             <button
               onClick={async () => { await ensureSeed(); await refreshProducts() }}
               style={{ marginLeft: 8, padding: '6px 10px', borderRadius: 8, cursor: 'pointer' }}
@@ -304,7 +321,7 @@ export default function VendaRapida() {
         {/* ações */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <button onClick={imprimirCupomDemo} style={btnPrimary}>Imprimir cupom (mock)</button>
-          <button onClick={clearCart} style={btnLight}>Limpar</button>
+          <button onClick={clearAll} style={btnLight}>Limpar</button>
           <Link to="/finalizacao" style={{ gridColumn: 'span 2', textDecoration: 'none' }}>
             <button style={{ ...btnPrimary, width: '100%', fontSize: 20 }}>Finalizar venda →</button>
           </Link>
