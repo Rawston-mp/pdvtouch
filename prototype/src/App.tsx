@@ -1,6 +1,8 @@
 // src/App.tsx
 import { NavLink, Routes, Route } from "react-router-dom"
 import { Suspense, lazy } from "react"
+import Configuracoes from "./pages/Configuracoes"
+
 
 // Páginas (todas já enviadas anteriormente)
 import VendaRapida from "./pages/VendaRapida"
@@ -20,6 +22,7 @@ export default function App() {
       <main style={{ padding: 12 }}>
         <Suspense fallback={<div>Carregando…</div>}>
           <Routes>
+            <Route path="/config" element={<Configuracoes />} />
             <Route path="/" element={<VendaRapida />} />
             <Route path="/venda" element={<VendaRapida />} />
             <Route path="/finalizacao" element={<Finalizacao />} />
@@ -62,6 +65,7 @@ function Header() {
       }}
     >
       <div style={{ fontWeight: 800 }}>PDVTouch (Protótipo)</div>
+      {link("/config", "Configurações")}
       {link("/venda", "Venda")}
       {link("/finalizacao", "Finalização")}
       {link("/impressao", "Impressão")}

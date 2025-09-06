@@ -1,7 +1,9 @@
 // src/pages/Admin.tsx
 import { useEffect, useMemo, useState } from 'react'
 import { CATEGORIES, createProduct, deleteProduct, listProducts, updateProduct } from '../db/products'
-import type { Product, Category } from '../db/models'
+import type { Product, Category, Destination } from '../db/models'
+
+const DESTS: Destination[] = ['CAIXA', 'COZINHA', 'BAR']
 
 type FormState = {
   id?: number
@@ -10,6 +12,7 @@ type FormState = {
   price?: string
   pricePerKg?: string
   active: boolean
+  route: Destination
 }
 
 const emptyForm: FormState = {
@@ -17,7 +20,8 @@ const emptyForm: FormState = {
   category: 'Pratos',
   price: '',
   pricePerKg: '',
-  active: true
+  active: true,
+  route: 'CAIXA'
 }
 
 export default function Admin() {
@@ -30,10 +34,7 @@ export default function Admin() {
     const list = await listProducts(!showInactive)
     setItems(list)
   }
-
-  useEffect(() => {
-    refresh()
-  }, [showInactive])
+  useEffect(() => { refresh() }, [showInactive])
 
   function onEdit(p: Product) {
     setEditingId(p.id!)
@@ -43,52 +44,36 @@ export default function Admin() {
       category: p.category,
       price: p.price?.toString() ?? '',
       pricePerKg: p.pricePerKg?.toString() ?? '',
-      active: p.active
+      active: p.active,
+      route: p.route ?? 'CAIXA'
     })
   }
 
-  function onCancel() {
-    setEditingId(null)
-    setForm({ ...emptyForm })
-  }
+  function onCancel() { setEditingId(null); setForm({ ...emptyForm }) }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
-
     const payload: Omit<Product, 'id'> = {
       name: form.name.trim(),
       category: form.category,
       price: form.category === 'Por Peso' ? undefined : numberOrUndefined(form.price),
       pricePerKg: form.category === 'Por Peso' ? numberOrUndefined(form.pricePerKg) : undefined,
-      active: form.active
+      active: form.active,
+      route: form.route
     }
-    if (!payload.name) {
-      alert('Nome é obrigatório.')
-      return
-    }
-    if (payload.category === 'Por Peso' && !payload.pricePerKg) {
-      alert('Preço por Kg é obrigatório para a categoria "Por Peso".')
-      return
-    }
-    if (payload.category !== 'Por Peso' && !payload.price) {
-      alert('Preço unitário é obrigatório para categorias não "Por Peso".')
-      return
-    }
+    if (!payload.name) return alert('Nome é obrigatório.')
+    if (payload.category === 'Por Peso' && !payload.pricePerKg) return alert('Preço por Kg é obrigatório.')
+    if (payload.category !== 'Por Peso' && !payload.price) return alert('Preço unitário é obrigatório.')
 
-    if (editingId) {
-      await updateProduct(editingId, payload)
-    } else {
-      await createProduct(payload)
-    }
-    await refresh()
-    onCancel()
+    if (editingId) await updateProduct(editingId, payload)
+    else await createProduct(payload)
+    await refresh(); onCancel()
   }
 
   async function onDelete(id?: number) {
     if (!id) return
     if (!confirm('Excluir este produto?')) return
-    await deleteProduct(id)
-    await refresh()
+    await deleteProduct(id); await refresh()
   }
 
   const view = useMemo(() => items.sort((a, b) => (a.category + a.name).localeCompare(b.category + b.name)), [items])
@@ -104,38 +89,32 @@ export default function Admin() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 2fr', gap: 16 }}>
-        {/* Formulário */}
         <form onSubmit={onSubmit} style={{ border: '1px solid #eee', borderRadius: 12, padding: 12 }}>
           <h3>{editingId ? 'Editar produto' : 'Novo produto'}</h3>
 
-          <div style={row}>
-            <label style={lbl}>Nome</label>
-            <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={inp} />
-          </div>
+          <div style={row}><label style={lbl}>Nome</label>
+            <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={inp} /></div>
 
-          <div style={row}>
-            <label style={lbl}>Categoria</label>
+          <div style={row}><label style={lbl}>Categoria</label>
             <select value={form.category} onChange={e => setForm({ ...form, category: e.target.value as Category })} style={inp}>
               {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
+            </select></div>
 
           {form.category === 'Por Peso' ? (
-            <div style={row}>
-              <label style={lbl}>Preço por Kg</label>
-              <input type="number" step="0.01" value={form.pricePerKg} onChange={e => setForm({ ...form, pricePerKg: e.target.value })} style={inp} />
-            </div>
+            <div style={row}><label style={lbl}>Preço por Kg</label>
+              <input type="number" step="0.01" value={form.pricePerKg} onChange={e => setForm({ ...form, pricePerKg: e.target.value })} style={inp} /></div>
           ) : (
-            <div style={row}>
-              <label style={lbl}>Preço unitário</label>
-              <input type="number" step="0.01" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} style={inp} />
-            </div>
+            <div style={row}><label style={lbl}>Preço unitário</label>
+              <input type="number" step="0.01" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} style={inp} /></div>
           )}
 
-          <div style={row}>
-            <label style={lbl}>Ativo</label>
-            <input type="checkbox" checked={form.active} onChange={e => setForm({ ...form, active: e.target.checked })} />
-          </div>
+          <div style={row}><label style={lbl}>Destino (rota)</label>
+            <select value={form.route} onChange={e => setForm({ ...form, route: e.target.value as Destination })} style={inp}>
+              {DESTS.map(d => <option key={d} value={d}>{d}</option>)}
+            </select></div>
+
+          <div style={row}><label style={lbl}>Ativo</label>
+            <input type="checkbox" checked={form.active} onChange={e => setForm({ ...form, active: e.target.checked })} /></div>
 
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
             <button type="submit" style={btnPrimary}>{editingId ? 'Salvar' : 'Adicionar'}</button>
@@ -143,7 +122,6 @@ export default function Admin() {
           </div>
         </form>
 
-        {/* Tabela */}
         <div style={{ border: '1px solid #eee', borderRadius: 12, padding: 12 }}>
           <h3>Catálogo</h3>
           {view.length === 0 ? (
@@ -155,6 +133,7 @@ export default function Admin() {
                   <th style={th}>Nome</th>
                   <th style={th}>Categoria</th>
                   <th style={th}>Preço</th>
+                  <th style={th}>Destino</th>
                   <th style={th}>Ativo</th>
                   <th style={th}>Ações</th>
                 </tr>
@@ -164,11 +143,8 @@ export default function Admin() {
                   <tr key={p.id} style={{ borderBottom: '1px solid #f4f4f4' }}>
                     <td style={td}>{p.name}</td>
                     <td style={td}>{p.category}</td>
-                    <td style={td}>
-                      {p.category === 'Por Peso'
-                        ? (p.pricePerKg ? `R$ ${p.pricePerKg.toFixed(2)} / kg` : '—')
-                        : (p.price ? `R$ ${p.price.toFixed(2)}` : '—')}
-                    </td>
+                    <td style={td}>{p.category === 'Por Peso' ? (p.pricePerKg ? `R$ ${p.pricePerKg.toFixed(2)} / kg` : '—') : (p.price ? `R$ ${p.price.toFixed(2)}` : '—')}</td>
+                    <td style={td}>{p.route ?? '—'}</td>
                     <td style={td}>{p.active ? 'Sim' : 'Não'}</td>
                     <td style={td}>
                       <button onClick={() => onEdit(p)} style={btnLight}>Editar</button>{' '}
@@ -184,12 +160,7 @@ export default function Admin() {
     </div>
   )
 }
-
-function numberOrUndefined(v?: string) {
-  const n = Number(v)
-  return isNaN(n) ? undefined : n
-}
-
+function numberOrUndefined(v?: string) { const n = Number(v); return isNaN(n) ? undefined : n }
 const row: React.CSSProperties = { display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'center', gap: 8, marginBottom: 8 }
 const lbl: React.CSSProperties = { fontSize: 14, color: '#444' }
 const inp: React.CSSProperties = { padding: '8px 10px', borderRadius: 8, border: '1px solid #ddd' }

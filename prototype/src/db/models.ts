@@ -1,15 +1,19 @@
 // src/db/models.ts
 
+// ---- Destinos / Rotas ----
+export type Destination = 'CAIXA' | 'COZINHA' | 'BAR'
+
 // ---- Catálogo ----
 export type Category = 'Pratos' | 'Bebidas' | 'Sobremesas' | 'Por Peso'
 
 export type Product = {
-  id?: number            // auto-increment
+  id?: number
   name: string
   category: Category
-  price?: number         // unitário
-  pricePerKg?: number    // por peso
+  price?: number
+  pricePerKg?: number
   active: boolean
+  route?: Destination        // <- destino padrão do item
 }
 
 // ---- Venda ----
@@ -17,10 +21,11 @@ export type OrderItem = {
   id: string
   productId: number
   name: string
-  qty: number           // se por peso: kg (3 casas)
+  qty: number
   unitPrice: number
   total: number
   isWeight: boolean
+  route?: Destination        // <- resolvido na venda a partir do produto
 }
 
 export type Payment = {
@@ -52,7 +57,7 @@ export type OutboxEvent = {
 }
 
 // ---- Fechamento X/Z ----
-export type Counters = { id: 'acc'; zBaseline: number } // baseline do último Z (timestamp)
+export type Counters = { id: 'acc'; zBaseline: number }
 export type ZClosure = {
   id?: number
   createdAt: number
@@ -63,4 +68,23 @@ export type ZClosure = {
     gross: number
     byMethod: Record<string, number>
   }
+}
+
+// ---- Configurações / Impressoras ----
+export type Settings = {
+  id: 'cfg'
+  companyName: string
+  cnpj: string
+  addressLine1?: string
+  addressLine2?: string
+}
+
+export type PrinterProfile = 'GENERIC' | 'ELGIN' | 'BEMATECH'
+
+export type Printer = {
+  id?: number
+  name: string               // ex.: "Caixa"
+  destination: Destination   // CAIXA | COZINHA | BAR
+  profile: PrinterProfile
+  // (futuro: host/ip/serial/baud etc.)
 }

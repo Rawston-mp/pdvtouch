@@ -7,59 +7,45 @@ import { getZBaseline, now, saveZClosure, setZBaseline, summarize, listZClosures
 import { Link } from 'react-router-dom'
 import { printText } from '../mock/devices'
 import { ticketX, ticketZ } from '../lib/escpos'
+import { findPrinterByDestination } from '../db/settings'
+import { getSettings } from '../db/settings'
 
 export default function RelatorioXZ() {
   const [orders, setOrders] = useState<Order[]>([])
   const [baseline, setBaseline] = useState<number>(0)
   const [history, setHistory] = useState<any[]>([])
+  const [company, setCompany] = useState<any>(null)
 
   async function refresh() {
     const base = await getZBaseline()
     setBaseline(base)
-    const all = await db.orders
-      .where('createdAt')
-      .between(base, now(), true, true)
-      .and(o => o.status === 'PAID')
-      .toArray()
+    const all = await db.orders.where('createdAt').between(base, now(), true, true).and(o => o.status === 'PAID').toArray()
     setOrders(all)
     setHistory(await listZClosures(20))
+    setCompany(await getSettings())
   }
-
   useEffect(() => { refresh() }, [])
 
   const totals = useMemo(() => summarize(orders), [orders])
 
   async function imprimirX() {
-    const text = ticketX({
-      periodo: { from: baseline, to: now() },
-      totals
-    })
-    printText('X-' + Date.now(), text)
+    const printer = await findPrinterByDestination('CAIXA')
+    if (!printer) return alert('Nenhuma impressora de CAIXA configurada em Configurações.')
+    const text = ticketX(company, { from: baseline, to: now() }, totals, printer)
+    printText(`CAIXA:${Date.now()}`, text)
     alert('Relatório X enviado para impressora (mock). Veja o terminal do WS.')
   }
 
   async function emitirZ() {
-    const from = baseline
-    const to = now()
-    // registra Z
-    const entry = {
-      createdAt: to,
-      from,
-      to,
-      totals
+    const from = baseline, to = now()
+    await saveZClosure({ createdAt: to, from, to, totals })
+    await setZBaseline(to)
+    const printer = await findPrinterByDestination('CAIXA')
+    if (printer) {
+      const zId = (history[0]?.id ?? 0) + 1
+      const text = ticketZ(company, { from, to }, totals, printer, zId)
+      printText(`CAIXA:${to}`, text)
     }
-    await saveZClosure(entry)
-    await setZBaseline(to) // reseta o baseline
-
-    // imprime Z
-    const zId = (history[0]?.id ?? 0) + 1 // heurística simples para demonstração
-    const text = ticketZ({
-      periodo: { from, to },
-      totals,
-      zNumber: zId
-    })
-    printText('Z-' + to, text)
-
     alert('Fechamento Z emitido e enviado para impressora (mock).')
     await refresh()
   }

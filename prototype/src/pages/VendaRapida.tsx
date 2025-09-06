@@ -1,11 +1,12 @@
 // src/pages/VendaRapida.tsx
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+
 import TecladoNumerico from '../components/TecladoNumerico'
 import { requestWeight, printText } from '../mock/devices'
-import { Link } from 'react-router-dom'
 import { saveCart } from '../lib/cartStorage'
 import { CATEGORIES, ensureSeed, listProducts } from '../db/products'
-import type { Product } from '../db/models'
+import type { Product, Destination } from '../db/models'
 
 type CartItem = {
   id: string
@@ -15,6 +16,7 @@ type CartItem = {
   qty: number
   total: number
   isWeight: boolean
+  route?: Destination // <- destino herdado do produto (CAIXA/COZINHA/BAR)
 }
 
 export default function VendaRapida() {
@@ -64,7 +66,8 @@ export default function VendaRapida() {
       unitPrice: price,
       qty,
       total: round2(price * qty),
-      isWeight: false
+      isWeight: false,
+      route: prod.route // <- herda o destino do produto
     }
     setCart(prev => [...prev, item])
     setQtyInput('')
@@ -83,7 +86,8 @@ export default function VendaRapida() {
         unitPrice: priceKg,
         qty: parseFloat(kg.toFixed(3)),
         total: round2(kg * priceKg),
-        isWeight: true
+        isWeight: true,
+        route: prod.route // <- herda o destino do produto
       }
       setCart(prev => [...prev, item])
     } catch {
@@ -130,7 +134,8 @@ export default function VendaRapida() {
     lines.push('--------------------------------')
     cart.forEach(i => {
       const q = i.isWeight ? `${i.qty.toFixed(3)}kg` : `${i.qty}x`
-      lines.push(`${truncate(i.name, 24)}  ${q}  R$ ${i.total.toFixed(2)}`)
+      const rot = i.route ? ` (${i.route})` : ''
+      lines.push(`${truncate(i.name, 24)}${rot}  ${q}  R$ ${i.total.toFixed(2)}`)
     })
     lines.push('--------------------------------')
     lines.push(`TOTAL: R$ ${total.toFixed(2)}`)
@@ -203,6 +208,7 @@ export default function VendaRapida() {
                 {p.category === 'Por Peso'
                   ? <div>R$ {p.pricePerKg?.toFixed(2)} / kg</div>
                   : <div>R$ {p.price?.toFixed(2)}</div>}
+                {p.route && <div style={{ fontSize: 11, opacity: .7, marginTop: 4 }}>→ {p.route}</div>}
               </button>
             ))}
           </div>
@@ -268,7 +274,7 @@ export default function VendaRapida() {
             {cart.map(i => (
               <li key={i.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f0f0f0' }}>
                 <div>
-                  <div style={{ fontWeight: 600 }}>{i.name}</div>
+                  <div style={{ fontWeight: 600 }}>{i.name} {i.route && <i style={{opacity:.6}}>({i.route})</i>}</div>
                   <div style={{ fontSize: 12, opacity: 0.8 }}>
                     {i.isWeight ? `${i.qty.toFixed(3)} kg` : `${i.qty} un`} · R$ {i.unitPrice.toFixed(2)} → <b>R$ {i.total.toFixed(2)}</b>
                   </div>

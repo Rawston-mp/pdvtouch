@@ -4,6 +4,8 @@ import { db } from '../db'
 import type { Order } from '../db/models'
 import { printText } from '../mock/devices'
 import { Link } from 'react-router-dom'
+import { findPrinterByDestination, getSettings } from '../db/settings'
+import { ticketKitchen } from '../lib/escpos'
 
 export default function Impressao() {
   const [orders, setOrders] = useState<Order[]>([])
@@ -16,7 +18,7 @@ export default function Impressao() {
       if (!cancelled) setOrders(all)
     }
     load()
-    const id = setInterval(load, 2000) // atualiza a cada 2s
+    const id = setInterval(load, 2000)
     return () => { cancelled = true; clearInterval(id) }
   }, [])
 
@@ -27,38 +29,25 @@ export default function Impressao() {
     return orders.filter(o => o.createdAt >= ts)
   }, [orders, filter])
 
-  function formatDate(ts: number) {
-    const d = new Date(ts)
-    return d.toLocaleString()
-  }
+  function formatDate(ts: number) { return new Date(ts).toLocaleString() }
 
-  function couponText(o: Order) {
-    const lines: string[] = []
-    lines.push('PDVTouch - Reimpressão')
-    lines.push(`Pedido: ${o.id}`)
-    lines.push(`Data:   ${formatDate(o.createdAt)}`)
-    lines.push('--------------------------------')
-    o.items.forEach(i => {
-      const q = i.isWeight ? `${i.qty.toFixed(3)}kg` : `${i.qty}x`
-      lines.push(`${truncate(i.name, 24)}  ${q}  R$ ${i.total.toFixed(2)}`)
-    })
-    lines.push('--------------------------------')
-    lines.push(`TOTAL: R$ ${o.total.toFixed(2)}`)
-    if (o.payments?.length) {
-      lines.push('Pagamentos:')
-      for (const p of o.payments) {
-        lines.push(` - ${p.method}  R$ ${p.amount.toFixed(2)}`)
-      }
+  async function reprint(o: Order) {
+    // Envia tickets por destino (se houver impressoras configuradas)
+    const [pCoz, pBar] = await Promise.all([
+      findPrinterByDestination('COZINHA'),
+      findPrinterByDestination('BAR')
+    ])
+    const cozItems = o.items.filter(i => (i.route ?? 'COZINHA') === 'COZINHA')
+    const barItems = o.items.filter(i => (i.route ?? 'BAR') === 'BAR')
+    if (cozItems.length && pCoz) {
+      const text = ticketKitchen('COZINHA', cozItems as any, pCoz, o.id)
+      printText(`COZ:${o.id}`, text)
     }
-    lines.push('')
-    lines.push('Obrigado!')
-    return lines.join('\n')
-  }
-
-  function reprint(o: Order) {
-    const text = couponText(o)
-    printText(o.id, text) // mock: imprime via WS
-    alert('Cupom enviado para impressora (mock). Veja o terminal do WS.')
+    if (barItems.length && pBar) {
+      const text = ticketKitchen('BAR', barItems as any, pBar, o.id)
+      printText(`BAR:${o.id}`, text)
+    }
+    alert('Reimpressão enviada (mock). Veja o terminal do WS.')
   }
 
   return (
@@ -92,13 +81,13 @@ export default function Impressao() {
                 <td style={{ padding: 8 }}>
                   {o.items.map(i => (
                     <div key={i.id} style={{ opacity: 0.85 }}>
-                      {truncate(i.name, 26)} — {i.isWeight ? `${i.qty.toFixed(3)}kg` : `${i.qty} un`} — R$ {i.total.toFixed(2)}
+                      {i.name} — {i.isWeight ? `${i.qty.toFixed(3)}kg` : `${i.qty} un`} — R$ {i.total.toFixed(2)} <i style={{opacity:.6}}>({i.route ?? '—'})</i>
                     </div>
                   ))}
                 </td>
                 <td style={{ padding: 8 }}><b>R$ {o.total.toFixed(2)}</b></td>
                 <td style={{ padding: 8 }}>
-                  <button onClick={() => reprint(o)} style={btnLight}>Reimprimir (mock)</button>
+                  <button onClick={() => reprint(o)} style={btnLight}>Reimprimir (cozinha/bar)</button>
                 </td>
               </tr>
             ))}
@@ -109,7 +98,6 @@ export default function Impressao() {
   )
 }
 
-function truncate(s: string, len: number) { return s.length > len ? s.slice(0, len - 1) + '…' : s }
 const btn = (active: boolean): React.CSSProperties => ({
   padding: '8px 12px', borderRadius: 8, border: '1px solid #ddd',
   background: active ? '#222' : '#fff', color: active ? '#fff' : '#222', cursor: 'pointer'
