@@ -4,11 +4,11 @@
 export type Category = 'Pratos' | 'Bebidas' | 'Sobremesas' | 'Por Peso'
 
 export type Product = {
-  id?: number            // auto-increment (Dexie)
+  id?: number            // auto-increment
   name: string
   category: Category
-  price?: number         // preço unitário
-  pricePerKg?: number    // se "Por Peso"
+  price?: number         // unitário
+  pricePerKg?: number    // por peso
   active: boolean
 }
 
@@ -43,10 +43,24 @@ export type Order = {
 
 // ---- Outbox ----
 export type OutboxEvent = {
-  id: string           // uuid
+  id: string
   type: 'ORDER_PAID' | 'ORDER_CANCELED' | 'SYNC_HEARTBEAT'
   payload: any
   createdAt: number
   tries: number
   lastError?: string
+}
+
+// ---- Fechamento X/Z ----
+export type Counters = { id: 'acc'; zBaseline: number } // baseline do último Z (timestamp)
+export type ZClosure = {
+  id?: number
+  createdAt: number
+  from: number
+  to: number
+  totals: {
+    count: number
+    gross: number
+    byMethod: Record<string, number>
+  }
 }

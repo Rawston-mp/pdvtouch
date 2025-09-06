@@ -1,11 +1,13 @@
 // src/db/index.ts
 import Dexie, { Table } from 'dexie'
-import type { Order, OutboxEvent, Product } from './models'
+import type { Order, OutboxEvent, Product, Counters, ZClosure } from './models'
 
 class PDVDB extends Dexie {
   orders!: Table<Order, string>
   outbox!: Table<OutboxEvent, string>
   products!: Table<Product, number>
+  counters!: Table<Counters, string>
+  closures!: Table<ZClosure, number>
 
   constructor() {
     super('pdv_db')
@@ -16,14 +18,14 @@ class PDVDB extends Dexie {
       outbox: 'id, type, createdAt, tries'
     })
 
-    // v2 (+products, com índice em active — DEPRECATED)
+    // v2 (+products)  (índice em active – deprecado)
     this.version(2).stores({
       orders: 'id, status, createdAt',
       outbox: 'id, type, createdAt, tries',
       products: '++id, name, category, active'
     })
 
-    // v3 (upgrade com seed)
+    // v3 (seed inicial)
     this.version(3)
       .stores({
         orders: 'id, status, createdAt',
@@ -42,29 +44,40 @@ class PDVDB extends Dexie {
             { name: 'Mousse', category: 'Sobremesas',          price: 7.5,  active: true },
             { name: 'Self-service por Kg', category: 'Por Peso', pricePerKg: 69.9, active: true },
             { name: 'Churrasco por Kg',   category: 'Por Peso', pricePerKg: 89.9, active: true }
-          ] as Product[])
+          ])
         }
       })
 
-    // v4 (schema correto – remove índice em 'active')
+    // v4 (remove índice booleano de products)
     this.version(4).stores({
       orders: 'id, status, createdAt',
       outbox: 'id, type, createdAt, tries',
-      products: '++id, name, category' // <- sem 'active'
+      products: '++id, name, category'
+    })
+
+    // v5 (+counters, +closures)
+    this.version(5).stores({
+      orders: 'id, status, createdAt',
+      outbox: 'id, type, createdAt, tries',
+      products: '++id, name, category',
+      counters: 'id',              // id fixo 'acc'
+      closures: '++id, createdAt'  // histórico de Z
+    }).upgrade(async tx => {
+      const has = await tx.table('counters').get('acc')
+      if (!has) {
+        const d = new Date(); d.setHours(0,0,0,0)
+        await tx.table('counters').add({ id: 'acc', zBaseline: +d } as Counters)
+      }
     })
   }
 }
 
 export const db = new PDVDB()
 
-/** Abre o DB (dispara migrações) */
 export async function initDb() {
-  if (!db.isOpen()) {
-    await db.open()
-  }
+  if (!db.isOpen()) await db.open()
 }
 
-/** Fecha, apaga e reabre o DB – para recuperar de falhas de migração */
 export async function resetDb() {
   try { if (db.isOpen()) db.close() } catch {}
   await db.delete()
