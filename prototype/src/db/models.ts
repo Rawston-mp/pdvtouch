@@ -1,6 +1,6 @@
 // src/db/models.ts
 
-// ---- Destinos / Rotas ----
+// ---- Rotas de produção ----
 export type Destination = 'CAIXA' | 'COZINHA' | 'BAR'
 
 // ---- Catálogo ----
@@ -13,10 +13,10 @@ export type Product = {
   price?: number
   pricePerKg?: number
   active: boolean
-  route?: Destination        // destino padrão do item
+  route?: Destination
 }
 
-// ---- Venda ----
+// ---- Venda / Pedido ----
 export type OrderItem = {
   id: string
   productId: number
@@ -37,11 +37,8 @@ export type Payment = {
   meta?: Record<string, any>
 }
 
-// identificação do cliente p/ cupom fiscal
 export type CustomerIdType = 'CPF' | 'CNPJ' | 'NONE'
-
-// **modo de emissão** do comprovante da venda
-export type ReceiptMode = 'NAO_FISCAL' | 'FISCAL_NFCE' | 'FISCAL_SAT' // SAT: legado
+export type ReceiptMode = 'NAO_FISCAL' | 'FISCAL_NFCE' | 'FISCAL_SAT'
 
 export type Order = {
   id: string
@@ -51,14 +48,12 @@ export type Order = {
   payments: Payment[]
   total: number
   notes?: string
-
-  // campos de cupom
   receiptMode?: ReceiptMode
   customerIdType?: CustomerIdType
-  customerTaxId?: string | null // CPF/CNPJ sem máscara
+  customerTaxId?: string | null
 }
 
-// ---- Outbox ----
+// ---- Outbox (sync mock) ----
 export type OutboxEvent = {
   id: string
   type: 'ORDER_PAID' | 'ORDER_CANCELED' | 'SYNC_HEARTBEAT'
@@ -68,7 +63,7 @@ export type OutboxEvent = {
   lastError?: string
 }
 
-// ---- Fechamento X/Z ----
+// ---- X/Z ----
 export type Counters = { id: 'acc'; zBaseline: number }
 export type ZClosure = {
   id?: number
@@ -92,10 +87,33 @@ export type Settings = {
 }
 
 export type PrinterProfile = 'GENERIC' | 'ELGIN' | 'BEMATECH'
-
 export type Printer = {
   id?: number
   name: string
   destination: Destination
   profile: PrinterProfile
+}
+
+// ---- Turno (Caixa) ----
+export type Shift = {
+  id?: number
+  openedAt: number
+  closedAt?: number | null
+  user?: string
+  openingAmount: number
+  closingAmount?: number | null
+}
+
+export type CashMovementType = 'SUPRIMENTO' | 'SANGRIA'
+export type CashMovement = {
+  id?: number
+  shiftId: number
+  createdAt: number
+  type: CashMovementType
+  amount: number           // >0
+  note?: string
+
+  // Cancelamento (auditoria)
+  voidedAt?: number | null
+  voidReason?: string | null
 }

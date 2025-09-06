@@ -1,78 +1,43 @@
 // src/App.tsx
-import { NavLink, Routes, Route } from "react-router-dom"
-import { Suspense, lazy } from "react"
-import Configuracoes from "./pages/Configuracoes"
-
-
-// Páginas (todas já enviadas anteriormente)
-import VendaRapida from "./pages/VendaRapida"
-import Finalizacao from "./pages/Finalizacao"
-import Impressao from "./pages/Impressao"
-import Relatorios from "./pages/Relatorios"
-import Admin from "./pages/Admin"
-import Sync from "./pages/Sync"
-// Novo: Relatório X/Z
-import RelatorioXZ from "./pages/RelatorioXZ"
+import { NavLink, Routes, Route } from 'react-router-dom'
+import VendaRapida from './pages/VendaRapida'
+import Finalizacao from './pages/Finalizacao'
+import Impressao from './pages/Impressao'
+import Relatorios from './pages/Relatorios'
+import RelatorioXZ from './pages/RelatorioXZ'
+import Admin from './pages/Admin'
+import Configuracoes from './pages/Configuracoes'
+import Sync from './pages/Sync'
+import Turno from './pages/Turno' // <--- NOVO
 
 export default function App() {
   return (
     <div>
-      <Header />
+      <nav style={{ display: 'flex', gap: 16, padding: 12, borderBottom: '1px solid #eee' }}>
+        <b>PDVTouch (Protótipo)</b>
+        <NavLink to="/config" >Configurações</NavLink>
+        <NavLink to="/venda">Venda</NavLink>
+        <NavLink to="/finalizacao">Finalização</NavLink>
+        <NavLink to="/impressao">Impressão</NavLink>
+        <NavLink to="/relatorios">Relatórios</NavLink>
+        <NavLink to="/relatorio-xz">Relatório X/Z</NavLink>
+        <NavLink to="/turno">Turno</NavLink> {/* <--- NOVO */}
+        <NavLink to="/admin">Admin</NavLink>
+        <NavLink to="/sync">Sync</NavLink>
+      </nav>
 
-      <main style={{ padding: 12 }}>
-        <Suspense fallback={<div>Carregando…</div>}>
-          <Routes>
-            <Route path="/config" element={<Configuracoes />} />
-            <Route path="/" element={<VendaRapida />} />
-            <Route path="/venda" element={<VendaRapida />} />
-            <Route path="/finalizacao" element={<Finalizacao />} />
-            <Route path="/impressao" element={<Impressao />} />
-            <Route path="/relatorios" element={<Relatorios />} />
-            <Route path="/relatorio-xz" element={<RelatorioXZ />} />
-            <Route path="/admin" element={<Admin />} />
-            <Route path="/sync" element={<Sync />} />
-          </Routes>
-        </Suspense>
-      </main>
+      <Routes>
+        <Route path="/" element={<VendaRapida/>} />
+        <Route path="/venda" element={<VendaRapida/>} />
+        <Route path="/finalizacao" element={<Finalizacao/>} />
+        <Route path="/impressao" element={<Impressao/>} />
+        <Route path="/relatorios" element={<Relatorios/>} />
+        <Route path="/relatorio-xz" element={<RelatorioXZ/>} />
+        <Route path="/turno" element={<Turno/>} /> {/* <--- NOVO */}
+        <Route path="/admin" element={<Admin/>} />
+        <Route path="/config" element={<Configuracoes/>} />
+        <Route path="/sync" element={<Sync/>} />
+      </Routes>
     </div>
-  )
-}
-
-function Header() {
-  const link = (to: string, label: string) => (
-    <NavLink
-      to={to}
-      style={({ isActive }) => ({
-        textDecoration: "none",
-        padding: "6px 10px",
-        borderRadius: 6,
-        color: isActive ? "#4a61d8" : "#222",
-        fontWeight: 600
-      })}
-    >
-      {label}
-    </NavLink>
-  )
-
-  return (
-    <header
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 14,
-        padding: "10px 12px",
-        borderBottom: "1px solid #eee"
-      }}
-    >
-      <div style={{ fontWeight: 800 }}>PDVTouch (Protótipo)</div>
-      {link("/config", "Configurações")}
-      {link("/venda", "Venda")}
-      {link("/finalizacao", "Finalização")}
-      {link("/impressao", "Impressão")}
-      {link("/relatorios", "Relatórios")}
-      {link("/relatorio-xz", "Relatório X/Z")} {/* <- nova aba */}
-      {link("/admin", "Admin")}
-      {link("/sync", "Sync")}
-    </header>
   )
 }
