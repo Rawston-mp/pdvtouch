@@ -110,10 +110,18 @@ export type CashMovement = {
   shiftId: number
   createdAt: number
   type: CashMovementType
-  amount: number           // >0
+  amount: number
   note?: string
-
-  // Cancelamento (auditoria)
   voidedAt?: number | null
   voidReason?: string | null
+}
+
+// ---- RBAC ----
+export type Role = 'ADMIN' | 'GERENTE' | 'CAIXA'
+
+export type User = {
+  id?: number
+  name: string
+  role: Role
+  pinHash: string // hash simples (dev); em produção: PBKDF2/Argon2
 }
