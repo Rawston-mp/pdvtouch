@@ -20,13 +20,13 @@ export async function updateUserPin(userId: number, newPin: string) {
   await db.users.put(u)
 }
 
-/**
- * Busca por PIN sem exigir índice (compatível com o schema atual).
- * Observação: para alto volume, podemos criar um índice em 'pinHash' numa próxima versão do DB.
- */
+export async function deleteUser(userId: number) {
+  await initDb()
+  await db.users.delete(userId)
+}
+
 export async function findByPin(pin: string): Promise<User | undefined> {
   await initDb()
   const pinHash = hashPin(pin)
-  // evita .where('pinHash') porque não há índice; usa filter (scan) — suficiente para poucos usuários.
   return db.users.filter(u => u.pinHash === pinHash).first()
 }

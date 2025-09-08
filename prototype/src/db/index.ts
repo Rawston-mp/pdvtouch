@@ -2,7 +2,7 @@
 import Dexie, { Table } from 'dexie'
 import type {
   Order, OutboxEvent, Product, Counters, ZClosure,
-  Settings, Printer, Shift, CashMovement, User
+  Settings, Printer, Shift, CashMovement, User, AuditLog
 } from './models'
 
 export class PDVDB extends Dexie {
@@ -16,10 +16,11 @@ export class PDVDB extends Dexie {
   shifts!: Table<Shift, number>
   cashMovs!: Table<CashMovement, number>
   users!: Table<User, number>
+  audits!: Table<AuditLog, number>
 
   constructor() {
     super('pdvtouch')
-    this.version(8).stores({
+    this.version(9).stores({
       orders: 'id, createdAt, status',
       outbox: 'id, type, createdAt',
       products: '++id, category, active, route',
@@ -29,7 +30,8 @@ export class PDVDB extends Dexie {
       printers: '++id, destination, profile',
       shifts: '++id, openedAt, closedAt',
       cashMovs: '++id, shiftId, createdAt, type',
-      users: '++id, role, name'
+      users: '++id, role, name',
+      audits: '++id, ts, action'
     })
   }
 }
@@ -41,7 +43,6 @@ export async function initDb() {
   if (inited) return
   await db.open()
 
-  // Seed mínimo
   const cfg = await db.settings.get('cfg')
   if (!cfg) {
     await db.settings.put({
@@ -49,9 +50,13 @@ export async function initDb() {
       companyName: 'PDVTouch Restaurante',
       cnpj: '00.000.000/0000-00',
       addressLine1: 'Rua Exemplo, 123 - Centro',
-      addressLine2: 'Cidade/UF'
+      addressLine2: 'Cidade/UF',
+      headerLines: ['PDVTouch Restaurante', 'CNPJ 00.000.000/0000-00', 'Rua Exemplo, 123 — Cidade/UF'],
+      footerLines: ['Obrigado pela preferência!', 'Volte sempre.'],
+      showPixOnFooter: false
     })
   }
+
   const printers = await db.printers.toArray()
   if (printers.length === 0) {
     await db.printers.bulkAdd([
@@ -60,19 +65,21 @@ export async function initDb() {
       { name: 'Bar', destination: 'BAR', profile: 'ELGIN' }
     ])
   }
+
   const users = await db.users.toArray()
   if (users.length === 0) {
     await db.users.bulkAdd([
-      { name: 'Administrador', role: 'ADMIN',  pinHash: hashPin('9999') },
+      { name: 'Administrador', role: 'ADMIN',   pinHash: hashPin('9999') },
       { name: 'Gerente',       role: 'GERENTE', pinHash: hashPin('1234') },
       { name: 'Caixa',         role: 'CAIXA',   pinHash: hashPin('0000') },
+      { name: 'Balança',       role: 'BALANÇA', pinHash: hashPin('2222') },
     ])
   }
+
   inited = true
 }
 
 export function hashPin(pin: string) {
-  // hash dev (não criptográfico). Em produção use PBKDF2/Argon2 com salt.
   const s = 'pdv-salt'
   let h = 0
   const t = (pin + s)

@@ -16,12 +16,12 @@ export type Product = {
   route?: Destination
 }
 
-// ---- Venda / Pedido ----
+// ---- Venda / Pedido (comanda) ----
 export type OrderItem = {
   id: string
   productId: number
   name: string
-  qty: number
+  qty: number               // kg (peso) ou unidade
   unitPrice: number
   total: number
   isWeight: boolean
@@ -41,7 +41,7 @@ export type CustomerIdType = 'CPF' | 'CNPJ' | 'NONE'
 export type ReceiptMode = 'NAO_FISCAL' | 'FISCAL_NFCE' | 'FISCAL_SAT'
 
 export type Order = {
-  id: string
+  id: string                    // para comanda: "COMANDA-<nnn>"
   createdAt: number
   status: 'OPEN' | 'PAID' | 'CANCELED'
   items: OrderItem[]
@@ -84,6 +84,9 @@ export type Settings = {
   cnpj: string
   addressLine1?: string
   addressLine2?: string
+  headerLines?: string[]
+  footerLines?: string[]
+  showPixOnFooter?: boolean
 }
 
 export type PrinterProfile = 'GENERIC' | 'ELGIN' | 'BEMATECH'
@@ -117,11 +120,20 @@ export type CashMovement = {
 }
 
 // ---- RBAC ----
-export type Role = 'ADMIN' | 'GERENTE' | 'CAIXA'
+export type Role = 'BALANÇA' | 'CAIXA' | 'GERENTE' | 'ADMIN'
 
 export type User = {
   id?: number
   name: string
   role: Role
-  pinHash: string // hash simples (dev); em produção: PBKDF2/Argon2
+  pinHash: string
+}
+
+// ---- Auditoria ----
+export type AuditLog = {
+  id?: number
+  ts: number
+  userName?: string | null
+  action: string            // LOGIN, LOGOUT, VENDA_PAGA, etc.
+  details?: any
 }
