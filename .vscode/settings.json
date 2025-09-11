@@ -26,9 +26,7 @@
   "prettier.printWidth": 100,
 
   // Tailwind (se usar)
-  "tailwindCSS.experimental.classRegex": [
-    ["clsx\\(([^)]*)\\)", "[\"'`]([^\"'`]*)[\"'`]"]
-  ],
+  "tailwindCSS.experimental.classRegex": [["clsx\\(([^)]*)\\)", "[\"'`]([^\"'`]*)[\"'`]"]],
 
   // Terminal/WSL
   "terminal.integrated.defaultProfile.windows": "WSL",
