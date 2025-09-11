@@ -1,43 +1,137 @@
 // src/App.tsx
-import { NavLink, Routes, Route } from 'react-router-dom'
+import { NavLink, Routes, Route, useNavigate } from 'react-router-dom'
+import { SessionProvider, useSession } from './auth/session'
+import { RequireRole } from './utils/guard.tsx'
+import LoginPin from './components/LoginPin'
+
+// Páginas
 import VendaRapida from './pages/VendaRapida'
 import Finalizacao from './pages/Finalizacao'
 import Impressao from './pages/Impressao'
 import Relatorios from './pages/Relatorios'
 import RelatorioXZ from './pages/RelatorioXZ'
-import Admin from './pages/Admin'
-import Configuracoes from './pages/Configuracoes'
+import Turno from './pages/Turno'
 import Sync from './pages/Sync'
-import Turno from './pages/Turno' // <--- NOVO
+import Admin from './pages/Admin'
+import AdminUsuarios from './pages/AdminUsuarios'
+import Configuracoes from './pages/Configuracoes'
+import AdminProdutos from './pages/AdminProdutos'
+
+// CSS global
+import './App.css'
+
+function Layout() {
+  const { user, signOut } = useSession()
+  const nav = useNavigate()
+
+  function sair() {
+    try { signOut() } catch {}
+    // volta pro boot (mostra modal de PIN)
+    window.location.href = '/'
+  }
+
+  return (
+    <div>
+      {/* Modal de PIN aparece quando não há sessão */}
+      <LoginPin />
+
+      {/* Topbar */}
+      <div style={topbar}>
+        <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+          <b>PDVTouch (Protótipo)</b>
+          <NavLink to="/venda" className={linkCls}>Venda</NavLink>
+          <NavLink to="/finalizacao" className={linkCls}>Finalização</NavLink>
+          <NavLink to="/impressao" className={linkCls}>Impressão</NavLink>
+          <NavLink to="/relatorios" className={linkCls}>Relatórios</NavLink>
+          <NavLink to="/relatorioxz" className={linkCls}>Relatório X/Z</NavLink>
+          <NavLink to="/turno" className={linkCls}>Turno</NavLink>
+          <NavLink to="/sync" className={linkCls}>Sync</NavLink>
+          <NavLink to="/admin" className={linkCls}>Admin</NavLink>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <small style={{ opacity: .7 }}>
+            {user ? `${user.name} — ${user.role}` : 'Sem sessão'}
+          </small>
+          <button onClick={sair} style={{ padding: '4px 10px' }}>Sair</button>
+        </div>
+      </div>
+
+      {/* Conteúdo */}
+      <div style={{ padding: '8px 12px' }}>
+        <Routes>
+          <Route path="/" element={<VendaRapida />} />
+          <Route path="/venda" element={<VendaRapida />} />
+          <Route path="/finalizacao" element={<Finalizacao />} />
+          <Route path="/impressao" element={<Impressao />} />
+          <Route path="/relatorios" element={<Relatorios />} />
+          <Route path="/relatorioxz" element={<RelatorioXZ />} />
+          <Route path="/turno" element={<Turno />} />
+          <Route path="/sync" element={<Sync />} />
+
+          {/* Admin & Config (somente ADMIN/GERENTE) */}
+          <Route
+            path="/admin"
+            element={
+              <RequireRole roles={['ADMIN', 'GERENTE']}>
+                <Admin />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/admin/usuarios"
+            element={
+              <RequireRole roles={['ADMIN', 'GERENTE']}>
+                <AdminUsuarios />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/admin/produtos"
+            element={
+              <RequireRole roles={['ADMIN', 'GERENTE']}>
+                <AdminProdutos />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/configuracoes"
+            element={
+              <RequireRole roles={['ADMIN', 'GERENTE']}>
+                <Configuracoes />
+              </RequireRole>
+            }
+          />
+
+          {/* fallback */}
+          <Route path="*" element={<VendaRapida />} />
+        </Routes>
+      </div>
+    </div>
+  )
+}
 
 export default function App() {
   return (
-    <div>
-      <nav style={{ display: 'flex', gap: 16, padding: 12, borderBottom: '1px solid #eee' }}>
-        <b>PDVTouch (Protótipo)</b>
-        <NavLink to="/config" >Configurações</NavLink>
-        <NavLink to="/venda">Venda</NavLink>
-        <NavLink to="/finalizacao">Finalização</NavLink>
-        <NavLink to="/impressao">Impressão</NavLink>
-        <NavLink to="/relatorios">Relatórios</NavLink>
-        <NavLink to="/relatorio-xz">Relatório X/Z</NavLink>
-        <NavLink to="/turno">Turno</NavLink> {/* <--- NOVO */}
-        <NavLink to="/admin">Admin</NavLink>
-        <NavLink to="/sync">Sync</NavLink>
-      </nav>
-
-      <Routes>
-        <Route path="/" element={<VendaRapida/>} />
-        <Route path="/venda" element={<VendaRapida/>} />
-        <Route path="/finalizacao" element={<Finalizacao/>} />
-        <Route path="/impressao" element={<Impressao/>} />
-        <Route path="/relatorios" element={<Relatorios/>} />
-        <Route path="/relatorio-xz" element={<RelatorioXZ/>} />
-        <Route path="/turno" element={<Turno/>} /> {/* <--- NOVO */}
-        <Route path="/admin" element={<Admin/>} />
-        <Route path="/config" element={<Configuracoes/>} />
-        <Route path="/sync" element={<Sync/>} />
-      </Routes>
-    </div>
+    <SessionProvider>
+      <Layout />
+    </SessionProvider>
   )
+}
+
+/* ------- estilos ------- */
+const topbar: React.CSSProperties = {
+  height: 48,
+  borderBottom: '1px solid #eee',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  padding: '0 10px',
+  position: 'sticky',
+  top: 0,
+  background: '#fff',
+  zIndex: 10,
+}
+
+function linkCls({ isActive }: { isActive: boolean }) {
+  return isActive ? 'navlink active' : 'navlink'
 }
