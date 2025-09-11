@@ -1,103 +1,137 @@
 // src/App.tsx
-import { NavLink, Routes, Route } from 'react-router-dom'
+import { NavLink, Routes, Route, useNavigate } from 'react-router-dom'
 import { SessionProvider, useSession } from './auth/session'
+import { RequireRole } from './utils/guard.tsx'
+import LoginPin from './components/LoginPin'
+
+// Páginas
 import VendaRapida from './pages/VendaRapida'
-import VendaBalanca from './pages/VendaBalanca'
 import Finalizacao from './pages/Finalizacao'
 import Impressao from './pages/Impressao'
 import Relatorios from './pages/Relatorios'
 import RelatorioXZ from './pages/RelatorioXZ'
-import Admin from './pages/Admin'
-import Configuracoes from './pages/Configuracoes'
-import Sync from './pages/Sync'
 import Turno from './pages/Turno'
-import LoginPin from './components/LoginPin'
+import Sync from './pages/Sync'
+import Admin from './pages/Admin'
 import AdminUsuarios from './pages/AdminUsuarios'
-import AdminAuditoria from './pages/AdminAuditoria'
+import Configuracoes from './pages/Configuracoes'
+import AdminProdutos from './pages/AdminProdutos'
 
-export default function App() {
-  return (
-    <SessionProvider>
-      <Shell />
-    </SessionProvider>
-  )
-}
+// CSS global
+import './App.css'
 
-function Shell() {
-  const { user, logout, hasRole } = useSession()
-  const needLogin = user == null
-  const isBalanca = user?.role === 'BALANÇA'
+function Layout() {
+  const { user, signOut } = useSession()
+  const nav = useNavigate()
+
+  function sair() {
+    try { signOut() } catch {}
+    // volta pro boot (mostra modal de PIN)
+    window.location.href = '/'
+  }
 
   return (
     <div>
-      <nav style={{ display: 'flex', gap: 16, padding: 12, borderBottom: '1px solid #eee', alignItems:'center' }}>
-        <b>PDVTouch (Protótipo)</b>
+      {/* Modal de PIN aparece quando não há sessão */}
+      <LoginPin />
 
-        <NavLink to="/venda">Venda</NavLink>
+      {/* Topbar */}
+      <div style={topbar}>
+        <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+          <b>PDVTouch (Protótipo)</b>
+          <NavLink to="/venda" className={linkCls}>Venda</NavLink>
+          <NavLink to="/finalizacao" className={linkCls}>Finalização</NavLink>
+          <NavLink to="/impressao" className={linkCls}>Impressão</NavLink>
+          <NavLink to="/relatorios" className={linkCls}>Relatórios</NavLink>
+          <NavLink to="/relatorioxz" className={linkCls}>Relatório X/Z</NavLink>
+          <NavLink to="/turno" className={linkCls}>Turno</NavLink>
+          <NavLink to="/sync" className={linkCls}>Sync</NavLink>
+          <NavLink to="/admin" className={linkCls}>Admin</NavLink>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <small style={{ opacity: .7 }}>
+            {user ? `${user.name} — ${user.role}` : 'Sem sessão'}
+          </small>
+          <button onClick={sair} style={{ padding: '4px 10px' }}>Sair</button>
+        </div>
+      </div>
 
-        {!isBalanca && <>
-          <NavLink to="/finalizacao">Finalização</NavLink>
-          <NavLink to="/impressao">Impressão</NavLink>
-          <NavLink to="/relatorios">Relatórios</NavLink>
-          <NavLink to="/relatorio-xz">Relatório X/Z</NavLink>
-          <NavLink to="/turno">Turno</NavLink>
-          <NavLink to="/sync">Sync</NavLink>
-        </>}
+      {/* Conteúdo */}
+      <div style={{ padding: '8px 12px' }}>
+        <Routes>
+          <Route path="/" element={<VendaRapida />} />
+          <Route path="/venda" element={<VendaRapida />} />
+          <Route path="/finalizacao" element={<Finalizacao />} />
+          <Route path="/impressao" element={<Impressao />} />
+          <Route path="/relatorios" element={<Relatorios />} />
+          <Route path="/relatorioxz" element={<RelatorioXZ />} />
+          <Route path="/turno" element={<Turno />} />
+          <Route path="/sync" element={<Sync />} />
 
-        {hasRole('GERENTE') && <NavLink to="/config">Configurações</NavLink>}
-        {hasRole('ADMIN') && <>
-          <NavLink to="/admin">Admin</NavLink>
-          <NavLink to="/admin-usuarios">Usuários</NavLink>
-          <NavLink to="/admin-auditoria">Auditoria</NavLink>
-        </>}
+          {/* Admin & Config (somente ADMIN/GERENTE) */}
+          <Route
+            path="/admin"
+            element={
+              <RequireRole roles={['ADMIN', 'GERENTE']}>
+                <Admin />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/admin/usuarios"
+            element={
+              <RequireRole roles={['ADMIN', 'GERENTE']}>
+                <AdminUsuarios />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/admin/produtos"
+            element={
+              <RequireRole roles={['ADMIN', 'GERENTE']}>
+                <AdminProdutos />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/configuracoes"
+            element={
+              <RequireRole roles={['ADMIN', 'GERENTE']}>
+                <Configuracoes />
+              </RequireRole>
+            }
+          />
 
-        <div style={{ marginLeft:'auto' }} />
-        {user ? (
-          <>
-            <span style={{ fontSize:12, padding:'4px 8px', background:'#f3f3f3', borderRadius:8 }}>
-              {user.name} — {user.role}
-            </span>
-            <button onClick={logout} style={{ marginLeft:8, padding:'6px 10px', borderRadius:8, border:'1px solid #ddd' }}>
-              Sair
-            </button>
-          </>
-        ) : (
-          <button
-            onClick={() => { window.location.hash = '#login'; window.dispatchEvent(new Event('hashchange')) }}
-            style={{ padding:'6px 10px', borderRadius:8, border:'1px solid #ddd' }}
-          >
-            Entrar
-          </button>
-        )}
-      </nav>
-
-      <LoginPin open={needLogin || window.location.hash === '#login'} />
-
-      <Routes>
-        {/* BALANÇA cai na VendaBalanca */}
-        <Route path="/" element={isBalanca ? <VendaBalanca /> : <VendaRapida />} />
-        <Route path="/venda" element={isBalanca ? <VendaBalanca /> : <VendaRapida />} />
-
-        {/* BALANÇA não acessa as telas abaixo */}
-        <Route path="/finalizacao" element={hasRole('CAIXA') ? <Finalizacao /> : <Blocked min="CAIXA" />} />
-        <Route path="/impressao"   element={hasRole('CAIXA') ? <Impressao />   : <Blocked min="CAIXA" />} />
-        <Route path="/relatorios"  element={hasRole('CAIXA') ? <Relatorios />  : <Blocked min="CAIXA" />} />
-        <Route path="/relatorio-xz" element={hasRole('GERENTE') ? <RelatorioXZ /> : <Blocked min="GERENTE" />} />
-        <Route path="/turno" element={hasRole('CAIXA') ? <Turno /> : <Blocked min="CAIXA" />} />
-        <Route path="/sync" element={hasRole('CAIXA') ? <Sync /> : <Blocked min="CAIXA" />} />
-
-        <Route path="/config" element={hasRole('GERENTE') ? <Configuracoes /> : <Blocked min="GERENTE" />} />
-        <Route path="/admin" element={hasRole('ADMIN') ? <Admin /> : <Blocked min="ADMIN" />} />
-        <Route path="/admin-usuarios" element={hasRole('ADMIN') ? <AdminUsuarios /> : <Blocked min="ADMIN" />} />
-        <Route path="/admin-auditoria" element={hasRole('ADMIN') ? <AdminAuditoria /> : <Blocked min="ADMIN" />} />
-      </Routes>
+          {/* fallback */}
+          <Route path="*" element={<VendaRapida />} />
+        </Routes>
+      </div>
     </div>
   )
 }
 
-function Blocked({ min }: { min: 'CAIXA' | 'GERENTE' | 'ADMIN' }) {
-  return <div style={{ padding: 16 }}>
-    <h3>Acesso restrito</h3>
-    <p>Esta tela requer perfil <b>{min}</b>.</p>
-  </div>
+export default function App() {
+  return (
+    <SessionProvider>
+      <Layout />
+    </SessionProvider>
+  )
+}
+
+/* ------- estilos ------- */
+const topbar: React.CSSProperties = {
+  height: 48,
+  borderBottom: '1px solid #eee',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  padding: '0 10px',
+  position: 'sticky',
+  top: 0,
+  background: '#fff',
+  zIndex: 10,
+}
+
+function linkCls({ isActive }: { isActive: boolean }) {
+  return isActive ? 'navlink active' : 'navlink'
 }

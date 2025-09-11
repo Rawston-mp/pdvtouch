@@ -1,56 +1,92 @@
 // src/auth/session.tsx
-import { createContext, useContext, useEffect, useState } from 'react'
-import type { Role, User } from '../db/models'
-import { findByPin, listUsers } from '../db/users'
-import { initDb } from '../db'
-import { logAudit } from '../db/audit'
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
+import type { UserRole } from '../db/models'
+import { findByPin, ensureSeedUsers } from '../db/users'
+
+export type SessionUser = {
+  id: number
+  name: string
+  role: UserRole
+  pin: string
+  active?: boolean
+}
 
 type Session = {
-  user: User | null
-  loginPin: (pin: string) => Promise<boolean>
-  logout: () => void
-  hasRole: (min: Role) => boolean
+  user: SessionUser | null
+  signInWithPin: (pin: string) => Promise<SessionUser | null>
+  signOut: () => void
+  hasRole: (r: UserRole) => boolean
 }
 
-const Ctx = createContext<Session>(null as any)
+const STORAGE_KEY = 'pdv_session'
+const SessionCtx = createContext<Session | null>(null)
 
-// ordem hierárquica (BALANÇA < CAIXA < GERENTE < ADMIN)
-const roleOrder: Role[] = ['BALANÇA', 'CAIXA', 'GERENTE', 'ADMIN']
-function roleGte(a: Role, b: Role) { return roleOrder.indexOf(a) >= roleOrder.indexOf(b) }
+export function SessionProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<SessionUser | null>(null)
 
-export function SessionProvider({ children }: { children: any }) {
-  const [user, setUser] = useState<User | null>(null)
-
+  // seed de usuários (garante PINs de exemplo)
   useEffect(() => {
-    (async () => {
-      await initDb()
-      const raw = localStorage.getItem('pdv_session_user')
-      if (raw) setUser(JSON.parse(raw))
-      else await listUsers()
-    })()
+    ensureSeedUsers().catch(() => {})
   }, [])
 
-  async function loginPin(pin: string) {
+  // carregar sessão do storage
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY)
+      if (raw) setUser(JSON.parse(raw))
+    } catch {}
+  }, [])
+
+  // persistir no storage
+  useEffect(() => {
+    try {
+      if (user) localStorage.setItem(STORAGE_KEY, JSON.stringify(user))
+      else localStorage.removeItem(STORAGE_KEY)
+    } catch {}
+  }, [user])
+
+  async function signInWithPin(pin: string) {
     const u = await findByPin(pin)
-    if (!u) return false
-    setUser(u)
-    localStorage.setItem('pdv_session_user', JSON.stringify(u))
-    await logAudit({ action: 'LOGIN', userName: u.name, details: { role: u.role } })
-    return true
+    if (!u || u.active === false) return null
+    const s: SessionUser = {
+      id: u.id!,
+      name: u.name,
+      role: u.role,
+      pin: u.pin,
+      active: u.active,
+    }
+    setUser(s)
+    return s
   }
 
-  function logout() {
-    if (user) logAudit({ action: 'LOGOUT', userName: user.name })
+  function signOut() {
     setUser(null)
-    localStorage.removeItem('pdv_session_user')
+    try {
+      localStorage.removeItem(STORAGE_KEY)
+      sessionStorage.removeItem('pdv_pre_comanda')
+    } catch {}
   }
 
-  function hasRole(min: Role) {
-    if (!user) return false
-    return roleGte(user.role, min)
+  function hasRole(r: UserRole) {
+    return user?.role === r
   }
 
-  return <Ctx.Provider value={{ user, loginPin, logout, hasRole }}>{children}</Ctx.Provider>
+  const value: Session = useMemo(
+    () => ({ user, signInWithPin, signOut, hasRole }),
+    [user]
+  )
+
+  return <SessionCtx.Provider value={value}>{children}</SessionCtx.Provider>
 }
 
-export function useSession() { return useContext(Ctx) }
+export function useSession() {
+  const ctx = useContext(SessionCtx)
+  if (!ctx) throw new Error('useSession must be used inside <SessionProvider>')
+  return ctx
+}

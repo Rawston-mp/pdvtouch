@@ -1,93 +1,153 @@
 // src/db/index.ts
 import Dexie, { Table } from 'dexie'
-import type {
-  Order, OutboxEvent, Product, Counters, ZClosure,
-  Settings, Printer, Shift, CashMovement, User, AuditLog
-} from './models'
 
-export class PDVDB extends Dexie {
-  orders!: Table<Order, string>
-  outbox!: Table<OutboxEvent, string>
+// Tipos usados nas tabelas (ajusta se seu models.ts tiver nomes diferentes)
+import type {
+  Product,
+  Order,
+  Settings,
+  Printer,
+  Destination,
+  PrinterProfile,
+} from './models'
+import type { UserRole } from './models'
+
+/* ===== Tipos auxiliares internos ===== */
+
+export type DbUser = {
+  id?: number
+  name: string
+  role: UserRole
+  pin: string
+  active?: boolean
+}
+
+export type DbShift = {
+  id?: number
+  openedAt: number
+  closedAt?: number | null
+  operatorName: string
+  openingAmount?: number
+  closingAmount?: number | null
+}
+
+export type DbAudit = {
+  id?: number
+  ts: number
+  type: string
+  message?: string
+  userName?: string
+}
+
+export type DbCounter = {
+  name: string
+  value: number
+}
+
+export type DbOutbox = {
+  id: string
+  kind: 'ORDER' | 'PRINT' | 'SAT' | 'NFCE' | 'TEF' | 'PIX' | string
+  state: 'PENDING' | 'SENT' | 'ERROR'
+  payload: any
+  createdAt: number
+  lastAttemptAt?: number
+  attempts?: number
+}
+
+/* ===== Banco ===== */
+
+class PDVDatabase extends Dexie {
+  // Tabelas (tipadas)
   products!: Table<Product, number>
-  counters!: Table<Counters, string>
-  closures!: Table<ZClosure, number>
-  settings!: Table<Settings, string>
+  users!: Table<DbUser, number>
+  orders!: Table<Order, string>
+  outbox!: Table<DbOutbox, string>
+  shifts!: Table<DbShift, number>
+  audits!: Table<DbAudit, number>
+  counters!: Table<DbCounter, string>
+
+  // Config / Impressão
+  settings!: Table<Settings, string> // id fixo 'cfg'
   printers!: Table<Printer, number>
-  shifts!: Table<Shift, number>
-  cashMovs!: Table<CashMovement, number>
-  users!: Table<User, number>
-  audits!: Table<AuditLog, number>
+  profiles!: Table<PrinterProfile, number>
+  destinations!: Table<Destination, number>
 
   constructor() {
     super('pdvtouch')
-    this.version(9).stores({
-      orders: 'id, createdAt, status',
-      outbox: 'id, type, createdAt',
-      products: '++id, category, active, route',
-      counters: 'id',
-      closures: '++id, createdAt, from, to',
+
+    /**
+     * v1 — estrutura básica
+     */
+    this.version(1).stores({
+      products: '++id',
+      users: '++id,pin,role,active',
+      orders: 'id,status,createdAt',
+      outbox: 'id,kind,state,createdAt',
+      shifts: '++id,openedAt,closedAt',
+      audits: '++id,ts,type',
+      counters: 'name',
+      // as stores abaixo ainda não existiam
+    })
+
+    /**
+     * v2 — índice por name em products
+     */
+    this.version(2).stores({
+      products: '++id,name',
+    })
+
+    /**
+     * v3 — índices para leitor/filtros em products
+     */
+    this.version(3).stores({
+      products: '++id,name,code,category',
+    })
+
+    /**
+     * v4 — adiciona stores de configuração e impressão
+     */
+    this.version(4).stores({
+      // chave única 'cfg'
       settings: 'id',
-      printers: '++id, destination, profile',
-      shifts: '++id, openedAt, closedAt',
-      cashMovs: '++id, shiftId, createdAt, type',
-      users: '++id, role, name',
-      audits: '++id, ts, action'
+      // impressoras e perfis
+      printers: '++id,name,destination',
+      profiles: '++id,name',
+      destinations: '++id,code,name',
     })
+
+    // Mapeamento de tabelas
+    this.products = this.table('products')
+    this.users = this.table('users')
+    this.orders = this.table('orders')
+    this.outbox = this.table('outbox')
+    this.shifts = this.table('shifts')
+    this.audits = this.table('audits')
+    this.counters = this.table('counters')
+
+    this.settings = this.table('settings')
+    this.printers = this.table('printers')
+    this.profiles = this.table('profiles')
+    this.destinations = this.table('destinations')
   }
 }
 
-export const db = new PDVDB()
+export const db = new PDVDatabase()
 
-let inited = false
+/**
+ * Alguns módulos antigos podem importar initDb(). Mantemos por compatibilidade.
+ * Aqui só garantimos que o DB está aberto.
+ */
 export async function initDb() {
-  if (inited) return
-  await db.open()
-
-  const cfg = await db.settings.get('cfg')
-  if (!cfg) {
-    await db.settings.put({
-      id: 'cfg',
-      companyName: 'PDVTouch Restaurante',
-      cnpj: '00.000.000/0000-00',
-      addressLine1: 'Rua Exemplo, 123 - Centro',
-      addressLine2: 'Cidade/UF',
-      headerLines: ['PDVTouch Restaurante', 'CNPJ 00.000.000/0000-00', 'Rua Exemplo, 123 — Cidade/UF'],
-      footerLines: ['Obrigado pela preferência!', 'Volte sempre.'],
-      showPixOnFooter: false
-    })
+  if (!db.isOpen()) {
+    await db.open()
   }
-
-  const printers = await db.printers.toArray()
-  if (printers.length === 0) {
-    await db.printers.bulkAdd([
-      { name: 'Caixa Principal', destination: 'CAIXA', profile: 'ELGIN' },
-      { name: 'Cozinha', destination: 'COZINHA', profile: 'ELGIN' },
-      { name: 'Bar', destination: 'BAR', profile: 'ELGIN' }
-    ])
-  }
-
-  const users = await db.users.toArray()
-  if (users.length === 0) {
-    await db.users.bulkAdd([
-      { name: 'Administrador', role: 'ADMIN',   pinHash: hashPin('9999') },
-      { name: 'Gerente',       role: 'GERENTE', pinHash: hashPin('1234') },
-      { name: 'Caixa',         role: 'CAIXA',   pinHash: hashPin('0000') },
-      { name: 'Balança',       role: 'BALANÇA', pinHash: hashPin('2222') },
-    ])
-  }
-
-  inited = true
+  return db
 }
 
-export function hashPin(pin: string) {
-  const s = 'pdv-salt'
-  let h = 0
-  const t = (pin + s)
-  for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0
-  return String(h)
-}
-
-export async function resetDb() {
+/**
+ * (Dev) Apaga todo o DB e reabre — útil para reset de schema em desenvolvimento
+ */
+export async function resetDbHard() {
   await db.delete()
-  window.location.reload()
+  await db.open()
 }

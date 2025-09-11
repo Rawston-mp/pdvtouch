@@ -1,32 +1,41 @@
 // src/db/users.ts
-import { db, hashPin, initDb } from './index'
-import type { Role, User } from './models'
+import { db } from './index'
+import type { DbUser } from './index'
+import type { UserRole } from './models'
 
-export async function listUsers() {
-  await initDb()
+export async function createUser(name: string, role: UserRole, pin: string, active = true) {
+  const user: DbUser = { name, role, pin, active }
+  const id = await db.users.add(user)
+  return { ...user, id }
+}
+
+export async function listUsers(): Promise<DbUser[]> {
   return db.users.toArray()
 }
 
-export async function createUser(name: string, role: Role, pin: string) {
-  await initDb()
-  return db.users.add({ name, role, pinHash: hashPin(pin) })
+export async function updateUserPin(id: number, newPin: string) {
+  await db.users.update(id, { pin: newPin })
 }
 
-export async function updateUserPin(userId: number, newPin: string) {
-  await initDb()
-  const u = await db.users.get(userId)
-  if (!u) throw new Error('Usuário não encontrado')
-  u.pinHash = hashPin(newPin)
-  await db.users.put(u)
+export async function deleteUser(id: number) {
+  await db.users.delete(id)
 }
 
-export async function deleteUser(userId: number) {
-  await initDb()
-  await db.users.delete(userId)
+export async function findByPin(pin: string): Promise<DbUser | null> {
+  const u = await db.users.where('pin').equals(pin).first()
+  if (!u || u.active === false) return null
+  return u
 }
 
-export async function findByPin(pin: string): Promise<User | undefined> {
-  await initDb()
-  const pinHash = hashPin(pin)
-  return db.users.filter(u => u.pinHash === pinHash).first()
+export async function ensureSeedUsers() {
+  const count = await db.users.count()
+  if (count > 0) return
+  const seed: DbUser[] = [
+    { name: 'Administrador', role: 'ADMIN', pin: '1111', active: true },
+    { name: 'Balança',       role: 'BALANÇA', pin: '2222', active: true },
+    { name: 'Gerente',       role: 'GERENTE', pin: '3333', active: true },
+    { name: 'Caixa',         role: 'CAIXA',   pin: '4444', active: true },
+    { name: 'Atendente',     role: 'ATENDENTE', pin: '5555', active: true },
+  ]
+  await db.users.bulkAdd(seed)
 }
