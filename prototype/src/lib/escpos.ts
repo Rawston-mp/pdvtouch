@@ -1,137 +1,86 @@
 // src/lib/escpos.ts
-import type { OrderItem, Printer, Settings } from '../db/models'
+// Gera Uint8Array com comandos ESC/POS reais.
+// Envie via Bridge p/ spoolar na impressora (USB/Ethernet/RAW).
 
-/** Perfis de comandos ESC/POS */
-export function profileCommands(profile: Printer['profile']) {
-  const ESC = '\x1B', GS = '\x1D'
-  switch (profile) {
-    case 'ELGIN':
-      return {
-        init: ESC + '@',
-        alignLeft: ESC + 'a' + '\x00',
-        alignCenter: ESC + 'a' + '\x01',
-        boldOn: ESC + 'E' + '\x01',
-        boldOff: ESC + 'E' + '\x00',
-        doubleOn: GS + '!' + '\x11',
-        doubleOff: GS + '!' + '\x00',
-        cutPartial: GS + 'V' + '\x01',
-        cutFull: GS + 'V' + '\x00'
-      }
-    case 'BEMATECH':
-      return {
-        init: ESC + '@',
-        alignLeft: ESC + 'a' + '\x00',
-        alignCenter: ESC + 'a' + '\x01',
-        boldOn: ESC + 'E' + '\x01',
-        boldOff: ESC + 'E' + '\x00',
-        doubleOn: ESC + '!' + '\x30',
-        doubleOff: ESC + '!' + '\x00',
-        cutPartial: '\x1D' + 'V' + '\x42' + '\x00',
-        cutFull: '\x1D' + 'V' + '\x41' + '\x00'
-      }
-    default: // GENERIC
-      return {
-        init: ESC + '@',
-        alignLeft: ESC + 'a' + '\x00',
-        alignCenter: ESC + 'a' + '\x01',
-        boldOn: ESC + 'E' + '\x01',
-        boldOff: ESC + 'E' + '\x00',
-        doubleOn: GS + '!' + '\x11',
-        doubleOff: GS + '!' + '\x00',
-        cutPartial: GS + 'V' + '\x01',
-        cutFull: GS + 'V' + '\x00'
-      }
-  }
+function enc(text: string): Uint8Array {
+  // Para acentuação adequada, converta para codepage da impressora no Bridge.
+  // Aqui mantemos UTF-8 e o Bridge faz transcodificação (iconv cp437/cp850).
+  return new TextEncoder().encode(text);
 }
 
-const line = (w = 32) => '─'.repeat(w)
-const money = (v: number) => 'R$ ' + v.toFixed(2)
-const fmtDate = (ts: number) => new Date(ts).toLocaleDateString() + ' ' + new Date(ts).toLocaleTimeString()
-
-export function ticketHeader(s: Settings, cmds = profileCommands('GENERIC')) {
-  const rows: string[] = []
-  rows.push(cmds.alignCenter + cmds.boldOn + cmds.doubleOn + (s.companyName || 'Empresa') + cmds.doubleOff + cmds.boldOff)
-  if (s.cnpj) rows.push(cmds.alignCenter + 'CNPJ: ' + s.cnpj)
-  if (s.addressLine1) rows.push(cmds.alignCenter + s.addressLine1)
-  if (s.addressLine2) rows.push(cmds.alignCenter + s.addressLine2)
-  return rows.join('\n')
+export function escposInit(): Uint8Array {
+  return Uint8Array.from([0x1B, 0x40]); // ESC @
 }
 
-// ---------- Relatórios X/Z ----------
-export function ticketX(
-  s: Settings,
-  periodo: { from: number; to: number },
-  totals: { count: number; gross: number; byMethod: Record<string, number> },
-  printer: Printer
-) {
-  const c = profileCommands(printer.profile)
-  const rows: string[] = []
-  rows.push(c.init)
-  rows.push(ticketHeader(s, c))
-  rows.push(c.alignLeft + line())
-  rows.push(c.alignCenter + c.boldOn + c.doubleOn + 'RELATÓRIO X' + c.doubleOff + c.boldOff)
-  rows.push(c.alignLeft + `Período: ${fmtDate(periodo.from)} → ${fmtDate(periodo.to)}`)
-  rows.push(line())
-  rows.push(`Vendas (qtd): ${totals.count}`)
-  rows.push(`Faturamento bruto: ${money(totals.gross)}`)
-  rows.push(line())
-  rows.push('Por método de pagamento:')
-  if (Object.keys(totals.byMethod).length === 0) rows.push('  —')
-  else for (const [m, v] of Object.entries(totals.byMethod)) rows.push(`  ${m.padEnd(8)} ${money(v)}`)
-  rows.push(line())
-  rows.push(c.alignCenter + 'Impresso: ' + fmtDate(Date.now()))
-  rows.push('\n\n' + c.cutPartial)
-  return rows.join('\n')
+export function escposAlignCenter(): Uint8Array {
+  return Uint8Array.from([0x1B, 0x61, 0x01]);
+}
+export function escposAlignLeft(): Uint8Array {
+  return Uint8Array.from([0x1B, 0x61, 0x00]);
 }
 
-export function ticketZ(
-  s: Settings,
-  periodo: { from: number; to: number },
-  totals: { count: number; gross: number; byMethod: Record<string, number> },
-  printer: Printer,
-  zNumber: number
-) {
-  const c = profileCommands(printer.profile)
-  const rows: string[] = []
-  rows.push(c.init)
-  rows.push(ticketHeader(s, c))
-  rows.push(c.alignLeft + line())
-  rows.push(c.alignCenter + c.boldOn + c.doubleOn + 'FECHAMENTO Z' + c.doubleOff + c.boldOff)
-  rows.push(c.alignCenter + `Z#: ${zNumber}`)
-  rows.push(c.alignLeft + `Período: ${fmtDate(periodo.from)} → ${fmtDate(periodo.to)}`)
-  rows.push(line())
-  rows.push(`Vendas (qtd): ${totals.count}`)
-  rows.push(`Faturamento bruto: ${money(totals.gross)}`)
-  rows.push(line())
-  rows.push('Por método de pagamento:')
-  if (Object.keys(totals.byMethod).length === 0) rows.push('  —')
-  else for (const [m, v] of Object.entries(totals.byMethod)) rows.push(`  ${m.padEnd(8)} ${money(v)}`)
-  rows.push(line())
-  rows.push(c.alignCenter + 'Emitido: ' + fmtDate(Date.now()))
-  rows.push('\n\n' + c.cutFull)
-  return rows.join('\n')
+export function escposEmphasized(on: boolean): Uint8Array {
+  return Uint8Array.from([0x1B, 0x45, on ? 1 : 0]);
 }
 
-// ---------- Tickets de produção (Cozinha/Bar) ----------
-export function ticketKitchen(title: string, items: OrderItem[], printer: Printer, orderId?: string) {
-  const c = profileCommands(printer.profile)
-  const rows: string[] = []
-  rows.push(c.init)
+export function escposCut(partial = true): Uint8Array {
+  // GS V m: m=0 full; m=1 partial (varia por fabricante)
+  return Uint8Array.from([0x1D, 0x56, partial ? 0x01 : 0x00]);
+}
 
-  // cabeçalho com nome do destino + APELIDO da impressora
-  rows.push(c.alignCenter + c.boldOn + title.toUpperCase() + c.boldOff)
-  if (printer?.name) rows.push(c.alignCenter + `Impressora: ${printer.name}`)
+export function escposNewLine(n = 1): Uint8Array {
+  return Uint8Array.from(Array(n).fill(0x0A));
+}
 
-  if (orderId) rows.push(c.alignCenter + `Pedido: ${orderId}`)
-  rows.push(line())
+export function escposText(text: string): Uint8Array {
+  return enc(text);
+}
 
-  for (const it of items) {
-    const q = it.isWeight ? `${it.qty.toFixed(3)} kg` : `${it.qty}x`
-    rows.push(`${it.name}  ${q}`)
+export function buildCustomerCoupon(params: {
+  header: { name: string; cnpj: string; addr1: string; addr2?: string };
+  items: { name: string; qty: number; unit: string; price: number; total: number }[];
+  totals: { subtotal: number; discount?: number; total: number };
+  qrCodeUrl?: string; // NFC-e QR (site da Sefaz)
+}): Uint8Array {
+  const chunks: Uint8Array[] = [];
+  chunks.push(escposInit());
+  chunks.push(escposAlignCenter());
+  chunks.push(escposEmphasized(true));
+  chunks.push(escposText(`${params.header.name}\n`));
+  chunks.push(escposEmphasized(false));
+  chunks.push(escposText(`CNPJ: ${params.header.cnpj}\n`));
+  chunks.push(escposText(`${params.header.addr1}\n`));
+  if (params.header.addr2) chunks.push(escposText(`${params.header.addr2}\n`));
+  chunks.push(escposNewLine());
+
+  chunks.push(escposAlignLeft());
+  params.items.forEach(i => {
+    chunks.push(escposText(`${i.name}\n`));
+    chunks.push(escposText(`${i.qty.toFixed(3)} ${i.unit} x R$ ${i.price.toFixed(2)}  =  R$ ${i.total.toFixed(2)}\n`));
+  });
+  chunks.push(escposNewLine());
+  chunks.push(escposText(`Subtotal: R$ ${params.totals.subtotal.toFixed(2)}\n`));
+  if (params.totals.discount) chunks.push(escposText(`Desconto: R$ ${params.totals.discount.toFixed(2)}\n`));
+  chunks.push(escposEmphasized(true));
+  chunks.push(escposText(`TOTAL:   R$ ${params.totals.total.toFixed(2)}\n`));
+  chunks.push(escposEmphasized(false));
+  chunks.push(escposNewLine(2));
+
+  if (params.qrCodeUrl) {
+    // Se impressora suportar QRCode nativo, envie ESC/POS QR; caso contrário, imprima URL.
+    chunks.push(escposText(`Consulte sua NFC-e:\n`));
+    chunks.push(escposText(`${params.qrCodeUrl}\n`));
+    chunks.push(escposNewLine(1));
   }
 
-  rows.push(line())
-  rows.push(c.alignCenter + fmtDate(Date.now()))
-  rows.push('\n' + c.cutPartial)
-  return rows.join('\n')
+  chunks.push(escposText(`Obrigado pela preferência!\n`));
+  chunks.push(escposNewLine(3));
+  chunks.push(escposCut(true));
+
+  // concat
+  const totalLen = chunks.reduce((a, c) => a + c.length, 0);
+  const out = new Uint8Array(totalLen);
+  let off = 0;
+  for (const c of chunks) { out.set(c, off); off += c.length; }
+  return out;
 }
