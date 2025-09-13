@@ -1,3 +1,5 @@
+import './utils/theme'   // inicializa tema + atalho Alt+D
+
 // src/main.tsx
 import React from 'react'
 import ReactDOM from 'react-dom/client'
