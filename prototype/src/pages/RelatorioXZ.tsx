@@ -1,121 +1,114 @@
 // src/pages/RelatorioXZ.tsx
-import { useEffect, useMemo, useState } from 'react'
-import { db } from '../db'
-import type { Order } from '../db/models'
-import { exportItemsCSV, exportOrdersCSV } from '../lib/csv'
-import { getZBaseline, now, saveZClosure, setZBaseline, summarize, listZClosures } from '../db/counters'
-import { Link } from 'react-router-dom'
-import { printText } from '../mock/devices'
-import { ticketX, ticketZ } from '../lib/escpos'
-import { findPrinterByDestination } from '../db/settings'
+import React, { useMemo, useState } from 'react'
+import { ticketX, ticketZ, PaymentsBreakdown } from '../lib/escpos'
+import { printRaw } from '../lib/printClient'
 import { getSettings } from '../db/settings'
 
+type Totais = {
+  salesQty: number
+  gross: number
+  avgTicket: number
+  payments: PaymentsBreakdown
+}
+
+function useTotaisMock(): Totais {
+  // Ajuste aqui para buscar dados reais do seu IndexedDB (orders, payments, etc.)
+  const itemsQty = 4
+  const gross = 88.78
+  const avg = gross / itemsQty
+  const payments: PaymentsBreakdown = { CASH: 40.69, PIX: 48.09 }
+  return { salesQty: itemsQty, gross, avgTicket: avg, payments }
+}
+
 export default function RelatorioXZ() {
-  const [orders, setOrders] = useState<Order[]>([])
-  const [baseline, setBaseline] = useState<number>(0)
-  const [history, setHistory] = useState<any[]>([])
-  const [company, setCompany] = useState<any>(null)
+  const [status, setStatus] = useState('')
+  const totais = useTotaisMock()
 
-  async function refresh() {
-    const base = await getZBaseline()
-    setBaseline(base)
-    const all = await db.orders.where('createdAt').between(base, now(), true, true).and(o => o.status === 'PAID').toArray()
-    setOrders(all)
-    setHistory(await listZClosures(20))
-    setCompany(await getSettings())
-  }
-  useEffect(() => { refresh() }, [])
+  const periodo = useMemo(() => {
+    const now = new Date()
+    const start = new Date(now); start.setHours(0, 0, 0, 0)
+    const fmt = (d: Date) => d.toLocaleString()
+    return { from: fmt(start), to: fmt(now) }
+  }, [])
 
-  const totals = useMemo(() => summarize(orders), [orders])
-
-  async function imprimirX() {
-    const printer = await findPrinterByDestination('CAIXA')
-    if (!printer) return alert('Nenhuma impressora de CAIXA configurada em Configurações.')
-    const text = ticketX(company, { from: baseline, to: now() }, totals, printer)
-    printText(`CAIXA:${Date.now()}`, text)
-    alert('Relatório X enviado para impressora (mock). Veja o terminal do WS.')
-  }
-
-  async function emitirZ() {
-    const from = baseline, to = now()
-    await saveZClosure({ createdAt: to, from, to, totals })
-    await setZBaseline(to)
-    const printer = await findPrinterByDestination('CAIXA')
-    if (printer) {
-      const zId = (history[0]?.id ?? 0) + 1
-      const text = ticketZ(company, { from, to }, totals, printer, zId)
-      printText(`CAIXA:${to}`, text)
+  async function handlePrintX() {
+    try {
+      setStatus('Gerando X...')
+      const cfg = await getSettings()
+      const bytes = ticketX({
+        header: { name: cfg.companyName ?? 'PDVTouch', cnpj: cfg.cnpj ?? undefined },
+        period: periodo,
+        counters: { salesQty: totais.salesQty, gross: totais.gross, avgTicket: totais.avgTicket },
+        payments: totais.payments,
+        topItems: [
+          { name: 'Buffet', qty: 0.701, total: 40.59 },
+          { name: 'Churrasco Kg', qty: 0.555, total: 32.69 },
+        ],
+      })
+      setStatus('Imprimindo X (CAIXA)...')
+      await printRaw(bytes, 'CAIXA')
+      setStatus('Relatório X impresso.')
+    } catch (e: any) {
+      setStatus(`Erro: ${e.message ?? e}`)
     }
-    alert('Fechamento Z emitido e enviado para impressora (mock).')
-    await refresh()
   }
 
-  function exportarCSV(tipo: 'orders' | 'items') {
-    const stamp = new Date().toISOString().replace(/[:T]/g,'-').slice(0,19)
-    if (tipo === 'orders') exportOrdersCSV(orders, `vendas_${stamp}.csv`)
-    else exportItemsCSV(orders, `itens_${stamp}.csv`)
+  async function handleEmitZ() {
+    try {
+      setStatus('Gerando Z...')
+      const cfg = await getSettings()
+      // Em produção, incremente e persista zNumber
+      const zNumber = Number(localStorage.getItem('pdv.lastZ') || '0') + 1
+      localStorage.setItem('pdv.lastZ', String(zNumber))
+
+      const bytes = ticketZ({
+        header: { name: cfg.companyName ?? 'PDVTouch', cnpj: cfg.cnpj ?? undefined },
+        period: periodo,
+        counters: { salesQty: totais.salesQty, gross: totais.gross, avgTicket: totais.avgTicket },
+        payments: totais.payments,
+        zNumber,
+        notes: 'Fechamento Z emitido e enviado para impressora (mock).',
+      })
+      setStatus('Imprimindo Z (CAIXA)...')
+      await printRaw(bytes, 'CAIXA')
+      setStatus('Z impresso com sucesso.')
+    } catch (e: any) {
+      setStatus(`Erro: ${e.message ?? e}`)
+    }
   }
 
   return (
     <div style={{ padding: 16 }}>
       <h2>Relatório X/Z</h2>
-      <p><b>Período corrente (desde o último Z):</b> {fmtDate(baseline)} → {fmtDate(now())}</p>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16 }}>
-        <Kpi title="Vendas (qtd)" value={totals.count.toString()} />
-        <Kpi title="Faturamento bruto" value={'R$ ' + totals.gross.toFixed(2)} />
-        <Kpi title="Pagamentos" value={Object.keys(totals.byMethod).length ? Object.entries(totals.byMethod).map(([m,v]) => `${m}: R$${v.toFixed(2)}`).join(' | ') : '—'} />
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button onClick={handlePrintX} style={btn}>Imprimir X (ESC/POS)</button>
+        <button onClick={handleEmitZ} style={{ ...btn, background: '#16a34a', color: '#fff', borderColor: '#15803d' }}>
+          Emitir Z (imprime & reinicia)
+        </button>
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <button onClick={() => exportarCSV('orders')} style={btnLight}>Exportar CSV (Vendas)</button>
-        <button onClick={() => exportarCSV('items')} style={btnLight}>Exportar CSV (Itens)</button>
-        <button onClick={imprimirX} style={btnLight}>Imprimir X (ESC/POS)</button>
-        <button onClick={emitirZ} style={btnPrimary}>Emitir Z (imprime & reinicia)</button>
-        <Link to="/relatorios" style={{ marginLeft: 'auto', textDecoration: 'none' }}>
-          <button style={btnLight}>Relatórios →</button>
-        </Link>
+      <div style={{ marginTop: 16, padding: 12, border: '1px solid #eee', borderRadius: 10, background: '#fafafa' }}>
+        <b>Status:</b> {status || 'Pronto.'}
       </div>
 
-      <h3>Histórico de Z (últimos)</h3>
-      {history.length === 0 ? (
-        <div style={{ opacity: 0.7 }}>Nenhum fechamento Z registrado.</div>
-      ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ textAlign: 'left', borderBottom: '1px solid #eee' }}>
-              <th style={th}>Data</th>
-              <th style={th}>Período</th>
-              <th style={th}>Qtd</th>
-              <th style={th}>Bruto</th>
-            </tr>
-          </thead>
-          <tbody>
-            {history.map((z: any) => (
-              <tr key={z.id} style={{ borderBottom: '1px solid #f4f4f4' }}>
-                <td style={td}>{fmtDate(z.createdAt)}</td>
-                <td style={td}>{fmtDate(z.from)} → {fmtDate(z.to)}</td>
-                <td style={td}>{z.totals?.count ?? 0}</td>
-                <td style={td}><b>R$ {(z.totals?.gross ?? 0).toFixed(2)}</b></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <div style={{ marginTop: 16 }}>
+        <h3 style={{ margin: 0 }}>Resumo atual</h3>
+        <p style={{ marginTop: 6 }}>
+          Vendas: <b>{totais.salesQty}</b> • Bruto: <b>R$ {totais.gross.toFixed(2)}</b> • Ticket médio: <b>R$ {totais.avgTicket.toFixed(2)}</b>
+        </p>
+        <p style={{ marginTop: 6 }}>
+          Pagamentos: CASH <b>R$ {(totais.payments.CASH ?? 0).toFixed(2)}</b> • PIX <b>R$ {(totais.payments.PIX ?? 0).toFixed(2)}</b> • TEF <b>R$ {(totais.payments.TEF ?? 0).toFixed(2)}</b>
+        </p>
+      </div>
     </div>
   )
 }
 
-function fmtDate(ts: number) { return new Date(ts).toLocaleString() }
-function Kpi({ title, value }: { title: string; value: string }) {
-  return (
-    <div style={{ border: '1px solid #eee', borderRadius: 12, padding: 12 }}>
-      <div style={{ fontSize: 12, opacity: 0.7 }}>{title}</div>
-      <div style={{ fontSize: 22, fontWeight: 700 }}>{value}</div>
-    </div>
-  )
+const btn: React.CSSProperties = {
+  padding: '10px 14px',
+  borderRadius: 10,
+  border: '1px solid #ddd',
+  background: '#fff',
+  cursor: 'pointer',
 }
-const th: React.CSSProperties = { padding: 8 }
-const td: React.CSSProperties = { padding: 8 }
-const btnPrimary: React.CSSProperties = { padding: '8px 12px', borderRadius: 8, border: '1px solid #0b5', background: '#0b5', color: '#fff', cursor: 'pointer' }
-const btnLight: React.CSSProperties = { padding: '8px 12px', borderRadius: 8, border: '1px solid #ddd', background: '#fff', cursor: 'pointer' }

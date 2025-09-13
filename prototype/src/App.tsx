@@ -1,10 +1,9 @@
 // src/App.tsx
-import { NavLink, Routes, Route, useNavigate } from 'react-router-dom'
+import { NavLink, Routes, Route } from 'react-router-dom'
 import { SessionProvider, useSession } from './auth/session'
 import { RequireRole } from './utils/guard.tsx'
 import LoginPin from './components/LoginPin'
 
-// Páginas
 import VendaRapida from './pages/VendaRapida'
 import Finalizacao from './pages/Finalizacao'
 import Impressao from './pages/Impressao'
@@ -16,26 +15,22 @@ import Admin from './pages/Admin'
 import AdminUsuarios from './pages/AdminUsuarios'
 import Configuracoes from './pages/Configuracoes'
 import AdminProdutos from './pages/AdminProdutos'
+import PixPage from './pages/Pix'          // <<<<<< NOVO
 
-// CSS global
 import './App.css'
 
 function Layout() {
   const { user, signOut } = useSession()
-  const nav = useNavigate()
 
   function sair() {
     try { signOut() } catch {}
-    // volta pro boot (mostra modal de PIN)
     window.location.href = '/'
   }
 
   return (
     <div>
-      {/* Modal de PIN aparece quando não há sessão */}
       <LoginPin />
 
-      {/* Topbar */}
       <div style={topbar}>
         <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
           <b>PDVTouch (Protótipo)</b>
@@ -56,7 +51,6 @@ function Layout() {
         </div>
       </div>
 
-      {/* Conteúdo */}
       <div style={{ padding: '8px 12px' }}>
         <Routes>
           <Route path="/" element={<VendaRapida />} />
@@ -68,7 +62,16 @@ function Layout() {
           <Route path="/turno" element={<Turno />} />
           <Route path="/sync" element={<Sync />} />
 
-          {/* Admin & Config (somente ADMIN/GERENTE) */}
+          {/* PIX: permitido CAIXA, GERENTE, ADMIN */}
+          <Route
+            path="/pix"
+            element={
+              <RequireRole roles={['CAIXA', 'GERENTE', 'ADMIN']}>
+                <PixPage />
+              </RequireRole>
+            }
+          />
+
           <Route
             path="/admin"
             element={
@@ -102,7 +105,6 @@ function Layout() {
             }
           />
 
-          {/* fallback */}
           <Route path="*" element={<VendaRapida />} />
         </Routes>
       </div>
@@ -118,7 +120,7 @@ export default function App() {
   )
 }
 
-/* ------- estilos ------- */
+/* estilos */
 const topbar: React.CSSProperties = {
   height: 48,
   borderBottom: '1px solid #eee',
@@ -131,7 +133,6 @@ const topbar: React.CSSProperties = {
   background: '#fff',
   zIndex: 10,
 }
-
 function linkCls({ isActive }: { isActive: boolean }) {
   return isActive ? 'navlink active' : 'navlink'
 }

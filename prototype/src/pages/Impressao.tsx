@@ -1,106 +1,92 @@
 // src/pages/Impressao.tsx
-import { useEffect, useMemo, useState } from 'react'
-import { db } from '../db'
-import type { Order } from '../db/models'
-import { printText } from '../mock/devices'
-import { Link } from 'react-router-dom'
-import { findPrinterByDestination, getSettings } from '../db/settings'
-import { ticketKitchen } from '../lib/escpos'
+import React, { useState } from 'react'
+import { buildCustomerCoupon, ticketKitchen, tefReceipt } from '../lib/escpos'
+import { printRaw } from '../lib/printClient'
 
 export default function Impressao() {
-  const [orders, setOrders] = useState<Order[]>([])
-  const [filter, setFilter] = useState<'ALL' | 'TODAY'>('TODAY')
+  const [status, setStatus] = useState<string>('')
 
-  useEffect(() => {
-    let cancelled = false
-    async function load() {
-      const all = await db.orders.orderBy('createdAt').reverse().toArray()
-      if (!cancelled) setOrders(all)
+  async function imprimirCupomCliente() {
+    try {
+      setStatus('Gerando cupom do cliente...')
+      const bytes = buildCustomerCoupon({
+        header: {
+          name: 'PDVTouch Restaurante',
+          cnpj: '00.000.000/0000-00',
+          addr1: 'Av. Exemplo, 123',
+          addr2: 'Cidade/UF',
+        },
+        items: [
+          { name: 'Buffet', qty: 0.701, unit: 'KG', price: 69.90, total: 49.00 },
+          { name: 'Suco Natural 300ml', qty: 1, unit: 'UN', price: 8.00, total: 8.00 },
+        ],
+        totals: { subtotal: 57.00, total: 57.00 },
+        footer: 'Volte sempre!',
+      })
+      setStatus('Enviando para impressora (CAIXA)...')
+      await printRaw(bytes, 'CAIXA')
+      setStatus('Cupom do cliente impresso com sucesso.')
+    } catch (e: any) {
+      setStatus(`Erro: ${e.message ?? e}`)
     }
-    load()
-    const id = setInterval(load, 2000)
-    return () => { cancelled = true; clearInterval(id) }
-  }, [])
+  }
 
-  const filtered = useMemo(() => {
-    if (filter === 'ALL') return orders
-    const start = new Date(); start.setHours(0,0,0,0)
-    const ts = +start
-    return orders.filter(o => o.createdAt >= ts)
-  }, [orders, filter])
-
-  function formatDate(ts: number) { return new Date(ts).toLocaleString() }
-
-  async function reprint(o: Order) {
-    // Envia tickets por destino (se houver impressoras configuradas)
-    const [pCoz, pBar] = await Promise.all([
-      findPrinterByDestination('COZINHA'),
-      findPrinterByDestination('BAR')
-    ])
-    const cozItems = o.items.filter(i => (i.route ?? 'COZINHA') === 'COZINHA')
-    const barItems = o.items.filter(i => (i.route ?? 'BAR') === 'BAR')
-    if (cozItems.length && pCoz) {
-      const text = ticketKitchen('COZINHA', cozItems as any, pCoz, o.id)
-      printText(`COZ:${o.id}`, text)
+  async function imprimirCozinha() {
+    try {
+      setStatus('Gerando ticket de cozinha...')
+      const bytes = ticketKitchen({
+        header: { name: 'PDVTouch Restaurante' },
+        destination: 'COZINHA',
+        orderId: '123',
+        timestamp: new Date().toLocaleString(),
+        items: [
+          { name: 'Picanha', qty: 2, notes: 'mal passado' },
+          { name: 'Batata frita', qty: 1 },
+        ],
+      })
+      setStatus('Enviando para impressora (COZINHA)...')
+      await printRaw(bytes, 'COZINHA')
+      setStatus('Ticket de cozinha impresso com sucesso.')
+    } catch (e: any) {
+      setStatus(`Erro: ${e.message ?? e}`)
     }
-    if (barItems.length && pBar) {
-      const text = ticketKitchen('BAR', barItems as any, pBar, o.id)
-      printText(`BAR:${o.id}`, text)
+  }
+
+  async function imprimirTef() {
+    try {
+      setStatus('Gerando comprovante TEF...')
+      const bytes = tefReceipt({
+        header: { name: 'PDVTouch Restaurante' },
+        total: 49.90,
+        nsu: '123456',
+        brand: 'VISA',
+        authCode: 'A1B2C3',
+        installments: 1,
+      })
+      setStatus('Enviando para impressora (CAIXA)...')
+      await printRaw(bytes, 'CAIXA')
+      setStatus('Comprovante TEF impresso com sucesso.')
+    } catch (e: any) {
+      setStatus(`Erro: ${e.message ?? e}`)
     }
-    alert('Reimpressão enviada (mock). Veja o terminal do WS.')
   }
 
   return (
     <div style={{ padding: 16 }}>
-      <h2>Impressão</h2>
+      <h2>Impressão — Testes ESC/POS</h2>
+      <p>Use os botões para validar a comunicação com o Bridge.</p>
 
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
-        <button onClick={() => setFilter('TODAY')} style={btn(filter==='TODAY')}>Hoje</button>
-        <button onClick={() => setFilter('ALL')} style={btn(filter==='ALL')}>Todos</button>
-        <Link to="/" style={{ marginLeft: 'auto', textDecoration: 'none' }}>
-          <button style={btnPrimary}>← Voltar à Venda</button>
-        </Link>
+      <div style={row}>
+        <button onClick={imprimirCupomCliente} style={btn}>Imprimir Cupom do Cliente</button>
+        <button onClick={imprimirCozinha} style={btn}>Imprimir Cozinha</button>
+        <button onClick={imprimirTef} style={btn}>Imprimir Comprovante TEF</button>
       </div>
 
-      {filtered.length === 0 ? (
-        <div style={{ opacity: 0.7 }}>Nenhum pedido encontrado.</div>
-      ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ textAlign: 'left', borderBottom: '1px solid #eee' }}>
-              <th style={{ padding: 8 }}>Data</th>
-              <th style={{ padding: 8 }}>Itens</th>
-              <th style={{ padding: 8 }}>Total</th>
-              <th style={{ padding: 8 }}>Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map(o => (
-              <tr key={o.id} style={{ borderBottom: '1px solid #f4f4f4' }}>
-                <td style={{ padding: 8 }}>{formatDate(o.createdAt)}</td>
-                <td style={{ padding: 8 }}>
-                  {o.items.map(i => (
-                    <div key={i.id} style={{ opacity: 0.85 }}>
-                      {i.name} — {i.isWeight ? `${i.qty.toFixed(3)}kg` : `${i.qty} un`} — R$ {i.total.toFixed(2)} <i style={{opacity:.6}}>({i.route ?? '—'})</i>
-                    </div>
-                  ))}
-                </td>
-                <td style={{ padding: 8 }}><b>R$ {o.total.toFixed(2)}</b></td>
-                <td style={{ padding: 8 }}>
-                  <button onClick={() => reprint(o)} style={btnLight}>Reimprimir (cozinha/bar)</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <pre style={pre}>{status || 'Pronto.'}</pre>
     </div>
   )
 }
 
-const btn = (active: boolean): React.CSSProperties => ({
-  padding: '8px 12px', borderRadius: 8, border: '1px solid #ddd',
-  background: active ? '#222' : '#fff', color: active ? '#fff' : '#222', cursor: 'pointer'
-})
-const btnPrimary: React.CSSProperties = { padding: '8px 12px', borderRadius: 8, border: '1px solid #0b5', background: '#0b5', color: '#fff', cursor: 'pointer' }
-const btnLight: React.CSSProperties = { padding: '8px 12px', borderRadius: 8, border: '1px solid #ddd', background: '#fff', cursor: 'pointer' }
+const row: React.CSSProperties = { display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 8 }
+const btn: React.CSSProperties = { padding: '10px 14px', borderRadius: 10, border: '1px solid #ddd', cursor: 'pointer', background: '#fff' }
+const pre: React.CSSProperties = { background: '#f8f8f8', padding: 12, borderRadius: 8, border: '1px solid #eee', marginTop: 16 }

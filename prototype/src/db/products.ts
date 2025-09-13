@@ -1,79 +1,39 @@
 // src/db/products.ts
-import { db } from './index'
-import type { Product } from './models'
+import { db, type Product } from "./index"
 
-/** Lista todos os produtos do catálogo (ordenado por nome, sem exigir índice) */
-export async function listProducts(): Promise<Product[]> {
-  return db.products.toCollection().sortBy('name')
+export async function listProducts(opts?: { category?: Product["category"], activeOnly?: boolean }) {
+  let q = db.products.toCollection()
+  if (opts?.category) q = db.products.where("category").equals(opts.category).toCollection()
+  let items = await q.toArray()
+  if (opts?.activeOnly) items = items.filter(i => i.active)
+  // Normaliza numéricos
+  return items.map(i => ({ ...i, price: Number(i.price || 0), pricePerKg: Number(i.pricePerKg || 0) }))
 }
 
-/** Busca por id */
-export async function getProduct(id: number) {
-  return db.products.get(id)
+export async function upsertProduct(p: Product) {
+  await db.products.put(p)
 }
 
-/** Procurar por code/ID/nome (para leitor) */
-export async function findByCodeOrName(input: string): Promise<Product | null> {
-  const x = (input || '').trim()
-  if (!x) return null
-
-  // 1) code exato (se existir o campo)
-  const byCode = await db.products.where('code' as any).equalsIgnoreCase?.(x).first?.()
-  if (byCode) return byCode as Product
-
-  // 2) id
-  const asId = Number(x)
-  if (Number.isFinite(asId)) {
-    const byId = await db.products.get(asId)
-    if (byId) return byId
-  }
-
-  // 3) nome (exato) -> depois contém
-  // sem índice, fazemos em memória
-  const all = await db.products.toArray()
-  const byNameEq = all.find(p => p.name?.toLowerCase() === x.toLowerCase())
-  if (byNameEq) return byNameEq
-  const like = all.find(p => p.name?.toLowerCase().includes(x.toLowerCase()))
-  return like ?? null
-}
-
-/** Salva/atualiza um produto */
-export async function saveProduct(p: Product) {
-  if (p.id) await db.products.update(p.id, p)
-  else await db.products.add(p)
-}
-
-/** Remove um produto */
-export async function removeProduct(id: number) {
+export async function deleteProduct(id: string) {
   await db.products.delete(id)
 }
 
-/** SEED: cria catálogo mínimo caso esteja vazio */
-export async function ensureSeedProducts() {
-  const count = await db.products.count()
-  if (count > 0) return
-
-  const seed: Product[] = [
-    // Por Kg
-    {
-      name: 'Self-service por Kg',
-      category: 'Por Peso',
-      pricePerKg: 69.90,
-      route: 'COZINHA',
-      code: 'PLU100'
-    },
-    // Pratos
-    { name: 'Prato Executivo', category: 'Pratos', price: 24.90, route: 'COZINHA', code: '7890000001001' },
-    { name: 'Guarnição do Dia', category: 'Pratos', price: 12.00, route: 'COZINHA', code: '7890000001002' },
-    // Bebidas
-    { name: 'Refrigerante Lata', category: 'Bebidas', price: 8.00, route: 'BAR', code: '7891000000001' },
-    { name: 'Água 500ml', category: 'Bebidas', price: 5.00, route: 'BAR', code: '7891000000002' },
-    { name: 'Suco Natural 300ml', category: 'Bebidas', price: 8.00, route: 'BAR', code: '7891000000003' },
-    // Sobremesas
-    { name: 'Mousse', category: 'Sobremesas', price: 7.50, route: 'SOBREMESA', code: '7892000000001' },
-    { name: 'Pudim', category: 'Sobremesas', price: 9.00, route: 'SOBREMESA', code: '7892000000002' }
-  ]
-
-  await db.products.bulkAdd(seed)
+export async function seedProducts() {
+  // Reaplica os padrões (idempotente)
+  const exists = await db.products.count()
+  if (exists > 0) return
+  await db.transaction("rw", db.products, async () => {
+    await db.products.clear()
+    await db.products.bulkPut([
+      { id: "p001", name: "Prato Executivo", category: "Pratos", byWeight: false, price: 24.90, active: true, code: "PR001" },
+      { id: "p002", name: "Guarnição do Dia", category: "Pratos", byWeight: false, price: 12.00, active: true, code: "PR002" },
+      { id: "s001", name: "Mousse", category: "Sobremesas", byWeight: false, price: 7.50, active: true, code: "SB001" },
+      { id: "s002", name: "Pudim", category: "Sobremesas", byWeight: false, price: 9.00, active: true, code: "SB002" },
+      { id: "b001", name: "Refrigerante Lata", category: "Bebidas", byWeight: false, price: 8.00, active: true, code: "BD001" },
+      { id: "b002", name: "Suco Natural 300ml", category: "Bebidas", byWeight: false, price: 8.00, active: true, code: "BD002" },
+      { id: "b003", name: "Água 500ml", category: "Bebidas", byWeight: false, price: 5.00, active: true, code: "BD003" },
+      { id: "g001", name: "Self-service por Kg", category: "Por Peso", byWeight: true, price: 0, pricePerKg: 69.90, active: true, code: "KG001" },
+      { id: "g002", name: "Churrasco por Kg", category: "Por Peso", byWeight: true, price: 0, pricePerKg: 89.90, active: true, code: "KG002" },
+    ])
+  })
 }
-;(async () => { try { await ensureSeedProducts() } catch { /* noop */ } })()
