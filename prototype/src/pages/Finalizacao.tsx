@@ -1,364 +1,396 @@
 // src/pages/Finalizacao.tsx
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { db } from '../db'
-import type { Order, OrderItem, Payment, ReceiptMode, CustomerIdType } from '../db/models'
-import { printText } from '../mock/devices'
-import { getSettings, findPrinterByDestination } from '../db/settings'
-import { ticketCupomCliente } from '../lib/escposCupom'
-import { logAudit } from '../db/audit'
-import { useSession } from '../auth/session'
+import React, { useEffect, useMemo, useState } from "react"
+import { useLocation, useNavigate } from "react-router-dom"
 
-const round2 = (n: number) => Math.round(n * 100) / 100
-const onlyDigits = (s: string) => (s || '').replace(/\D+/g, '')
-const pad = (n: number) => n.toString().padStart(3, '0')
+import { useSession } from "../auth/session"
+import {
+  loadCartDraft,
+  saveCartDraft,
+  removeCartDraft,
+  type CartItem,
+} from "../lib/cartStorage"
+import { printText } from "../mock/devices"
+
+type DocType = "NAO_FISCAL" | "NFCE" | "SAT" // SAT legado
+
+const toNumber = (v: any, fallback = 0) => {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : fallback
+}
+const money = (v: any) => toNumber(v).toFixed(2)
+
+/** Tenta extrair uma comanda de uma leitura de leitor/código */
+function parseOrderFromScan(val: string): number | null {
+  if (!val) return null
+  // Normaliza: pega somente dígitos
+  const digits = (val.match(/\d+/g) || []).join("")
+  if (!digits) return null
+  const n = Number(digits)
+  if (!Number.isFinite(n)) return null
+  if (n < 1 || n > 100) return null
+  return n
+}
 
 export default function Finalizacao() {
-  const { user, hasRole } = useSession()
   const nav = useNavigate()
+  const { state } = useLocation() as any
 
-  const [comandaNum, setComandaNum] = useState('')
-  const [order, setOrder] = useState<Order | null>(null)
+  const { user } = useSession()
+  const roleRaw = (user?.role ?? "CAIXA") as string
+  const role = roleRaw.normalize("NFD").replace(/\p{Diacritic}/gu, "").toUpperCase() // BALANÇA→BALANCA
 
-  // documento fiscal
-  const [mode, setMode] = useState<ReceiptMode>('NAO_FISCAL') // padrão
-  const [idType, setIdType] = useState<CustomerIdType>('NONE')
-  const [taxId, setTaxId] = useState('')
-
-  // pagamentos (padrão = tudo em dinheiro)
-  const [paySplit, setPaySplit] = useState<{ CASH: number; PIX: number; TEF: number }>({ CASH: 0, PIX: 0, TEF: 0 })
-  const sumSplit = useMemo(() => round2(paySplit.CASH + paySplit.PIX + paySplit.TEF), [paySplit])
-
-  // editar preço (apenas gerente)
-  const [allowEditPrice, setAllowEditPrice] = useState(false)
-
-  const taxInputRef = useRef<HTMLInputElement>(null)
-
-  // 🔎 Buscar comanda OPEN
-  async function buscarComanda() {
-    if (!comandaNum) return
-    const id = 'COMANDA-' + pad(Number(comandaNum))
-    const o = await db.orders.get(id)
-    if (!o || o.status !== 'OPEN') { alert('Comanda não encontrada ou já fechada.'); return }
-    setOrder(o)
-    // padrões após carregar: não fiscal + tudo em dinheiro
-    setMode('NAO_FISCAL')
-    setIdType('NONE')
-    setTaxId('')
-    setPaySplit({ CASH: o.total, PIX: 0, TEF: 0 })
+  // Bloqueio: balança não finaliza
+  if (role === "BALANCA") {
+    return (
+      <div className="container">
+        <h2>Finalização</h2>
+        <div className="card">
+          <h3 className="card-title">Acesso restrito</h3>
+          <p className="muted">
+            O perfil <b>Balança</b> não possui permissão para finalizar comandas.
+          </p>
+          <button onClick={() => nav("/venda")} className="btn">Voltar</button>
+        </div>
+      </div>
+    )
   }
 
-  // ➕ Adicionar extra
-  function addExtra(nome: string, preco: number) {
-    if (!order) return
-    const item: OrderItem = {
-      id: crypto.randomUUID(),
-      productId: 0,
-      name: nome,
-      qty: 1,
-      unitPrice: preco,
-      total: preco,
-      isWeight: false
+  // estado inicial
+  const [orderIdInput, setOrderIdInput] = useState<string>(
+    state?.orderId ? String(state.orderId) : ""
+  )
+  const [orderId, setOrderId] = useState<number | null>(state?.orderId ?? null)
+  const [cart, setCart] = useState<CartItem[]>(
+    Array.isArray(state?.cart) ? state.cart : []
+  )
+
+  const [doc, setDoc] = useState<DocType>("NAO_FISCAL")
+  const [idFiscal, setIdFiscal] = useState<string>("") // CPF/CNPJ opcional
+
+  // pagamentos
+  const [vCash, setVCash] = useState<string>("0")
+  const [vPix, setVPix] = useState<string>("0")
+  const [vTef, setVTef] = useState<string>("0")
+  const [subtotalInfo, setSubtotalInfo] = useState<string>("0")
+
+  // derivados
+  const total = useMemo(
+    () => cart.reduce((acc, it) => acc + toNumber(it.qty) * toNumber(it.price), 0),
+    [cart]
+  )
+  const pagos = useMemo(
+    () => toNumber(vCash) + toNumber(vPix) + toNumber(vTef),
+    [vCash, vPix, vTef]
+  )
+  const falta = useMemo(() => Math.max(0, total - pagos), [total, pagos])
+
+  // Carregar por comanda/leitor
+  async function loadByOrder() {
+    const parsed = parseOrderFromScan(orderIdInput)
+    if (parsed == null) {
+      alert("Informe/escaneie um Nº de comanda válido (1–100).")
+      return
     }
-    applyItems([...order.items, item])
+    const draft = loadCartDraft(parsed) || []
+    setOrderId(parsed)
+    setCart(draft.map((x) => ({ ...x, price: toNumber(x.price), qty: toNumber(x.qty) })))
+    // zera pagamentos ao trocar de comanda
+    setVCash("0"); setVPix("0"); setVTef("0")
   }
 
-  // 🗑️ Remover item
-  function removerItem(id: string) {
-    if (!order) return
-    applyItems(order.items.filter(i => i.id !== id))
-  }
-
-  // ✏️ Alterar quantidade (kg/unidades)
-  function setQty(id: string, qtyRaw: number) {
-    if (!order) return
-    const items = order.items.map(i => {
-      if (i.id !== id) return i
-      const q = Math.max(0, i.isWeight ? Number(qtyRaw.toFixed ? qtyRaw.toFixed(3) : qtyRaw) : Math.round(qtyRaw))
-      const total = round2(q * i.unitPrice)
-      return { ...i, qty: q, total }
-    })
-    applyItems(items)
-  }
-
-  // ✏️ Alterar preço unitário (permitido só se allowEditPrice = true)
-  function setUnitPrice(id: string, priceRaw: number) {
-    if (!order || !allowEditPrice) return
-    const items = order.items.map(i => {
-      if (i.id !== id) return i
-      const p = Math.max(0, round2(priceRaw))
-      const total = round2(i.qty * p)
-      return { ...i, unitPrice: p, total }
-    })
-    applyItems(items)
-  }
-
-  // Aplica lista e recalcula total/parcelas
-  function applyItems(items: OrderItem[]) {
-    if (!order) return
-    const total = round2(items.reduce((s, i) => s + i.total, 0))
-    setOrder({ ...order, items, total })
-    // regra: sempre default dinheiro ao total
-    setPaySplit({ CASH: total, PIX: 0, TEF: 0 })
-  }
-
-  // mocks de autorização
-  async function simulatePix(amount: number) {
-    await new Promise(r => setTimeout(r, 1000))
-    return 'PIX' + Math.floor(Math.random() * 1e6).toString().padStart(6, '0')
-  }
-  async function simulateTef(amount: number) {
-    await new Promise(r => setTimeout(r, 1200))
-    return 'AP' + Math.floor(Math.random() * 1e6).toString().padStart(6, '0')
-  }
-
-  // ✅ Confirmar pagamento
-  async function confirm() {
-    if (!order) return
-    if (order.items.length === 0) return alert('Sem itens.')
-    if (Math.abs(sumSplit - order.total) > 0.009) return alert('Pagamentos não fecham com o total.')
-
-    const payments: Payment[] = []
-    let pixAuth: string | undefined, tefAuth: string | undefined
-
-    if (paySplit.CASH) payments.push({ id: crypto.randomUUID(), method: 'CASH', amount: round2(paySplit.CASH) })
-    if (paySplit.PIX)  { pixAuth = await simulatePix(paySplit.PIX); payments.push({ id: crypto.randomUUID(), method: 'PIX', amount: paySplit.PIX, authCode: pixAuth }) }
-    if (paySplit.TEF)  { tefAuth = await simulateTef(paySplit.TEF); payments.push({ id: crypto.randomUUID(), method: 'TEF', amount: paySplit.TEF, authCode: tefAuth }) }
-
-    const updated: Order = {
-      ...order,
-      payments,
-      status: 'PAID',
-      receiptMode: mode,
-      customerIdType: idType,
-      customerTaxId: idType === 'NONE' ? null : onlyDigits(taxId)
-    }
-    await db.orders.put(updated)
-
-    await logAudit({ action: 'VENDA_PAGA', userName: user?.name ?? null, details: { orderId: updated.id, total: updated.total, pay: payments } })
-    await onPrint(updated)
-
-    alert('Comanda paga e cupom impresso.')
-    nav('/venda')
-  }
-
-  // 🖨️ Impressão mock
-  async function onPrint(order: Order) {
-    const settings = await getSettings()
-    const printer = await findPrinterByDestination('CAIXA')
-    if (!printer) { alert('Sem impressora CAIXA configurada.'); return }
-    const nfceMock = (order.receiptMode === 'FISCAL_NFCE') ? {
-      chaveAcesso: '3515 2509 0123 4567 8901 2345 6789 0123 4567 8901 2345',
-      urlConsulta: 'https://www.nfce.fazenda.sp.gov.br/consulta',
-      qrCodeConteudo: `https://nfce.mock/${order.id}`
-    } : undefined
-    const text = ticketCupomCliente({ order, settings, printer, nfce: nfceMock })
-    printText('CUPOM:' + order.id, text)
-  }
-
-  // Atalhos de teclado
+  // Atalhos
   useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement)?.tagName
-      const typing = tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable
-      // atalhos que não devem disparar quando digitando em campos:
-      const safe = !typing
-
-      // Documento
-      if (safe && e.key === 'F2') { e.preventDefault(); setMode('NAO_FISCAL') }
-      if (safe && e.key === 'F3') { e.preventDefault(); setMode('FISCAL_NFCE') }
-      if (safe && e.key === 'F4') { e.preventDefault(); setMode('FISCAL_SAT') }
-
-      // Split rápido 100%
-      if (safe && e.key === 'F6' && order) { e.preventDefault(); setPaySplit({ CASH: order.total, PIX: 0, TEF: 0 }) }
-      if (safe && e.key === 'F7' && order) { e.preventDefault(); setPaySplit({ CASH: 0, PIX: order.total, TEF: 0 }) }
-      if (safe && e.key === 'F8' && order) { e.preventDefault(); setPaySplit({ CASH: 0, PIX: 0, TEF: order.total }) }
-
-      // Confirmar
-      if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); confirm() }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "F6") { e.preventDefault(); set100("cash") }
+      if (e.key === "F7") { e.preventDefault(); set100("pix") }
+      if (e.key === "F8") { e.preventDefault(); set100("tef") }
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); confirmar() }
+      if (e.key === "Escape") { e.preventDefault(); nav("/venda") }
+      if (e.key === "F3") { e.preventDefault(); setDoc("NFCE") }
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [order])
+  }, [total, vCash, vPix, vTef, cart, orderId, doc, idFiscal])
 
-  // Atalho: Enter dentro do input de comanda = buscar
-  function onComandaKey(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Enter') { e.preventDefault(); buscarComanda() }
+  // Persistir rascunho quando caixa altera itens
+  useEffect(() => {
+    if (orderId != null) saveCartDraft(orderId, cart)
+  }, [cart, orderId])
+
+  // Edição de itens
+  const canEditPrice = role === "GERENTE" || role === "ADMIN"
+
+  function updateQty(it: CartItem, next: string) {
+    setCart((c) =>
+      c.map((x) => (x.id === it.id ? { ...x, qty: Math.max(0, toNumber(next)) } : x))
+    )
+  }
+  function updatePrice(it: CartItem, next: string) {
+    if (!canEditPrice) return
+    setCart((c) =>
+      c.map((x) => (x.id === it.id ? { ...x, price: Math.max(0, toNumber(next)) } : x))
+    )
+  }
+  function removeItem(it: CartItem) {
+    setCart((c) => c.filter((x) => x.id !== it.id))
+  }
+
+  function set100(which: "cash" | "pix" | "tef") {
+    const resto = Math.max(
+      0,
+      total -
+        (which === "cash"
+          ? toNumber(vPix) + toNumber(vTef)
+          : which === "pix"
+          ? toNumber(vCash) + toNumber(vTef)
+          : toNumber(vCash) + toNumber(vPix))
+    )
+    const v = money(resto)
+    if (which === "cash") setVCash(v)
+    if (which === "pix") setVPix(v)
+    if (which === "tef") setVTef(v)
+  }
+
+  async function confirmar() {
+    if (orderId == null) {
+      alert("Informe/escaneie a comanda para finalizar.")
+      return
+    }
+    if (!cart.length) {
+      alert("Comanda vazia.")
+      return
+    }
+    if (toNumber(subtotalInfo) > 0 && Math.abs(toNumber(subtotalInfo) - total) > 0.009) {
+      alert("O subtotal informado não confere com o total calculado.")
+      return
+    }
+    if (Math.abs(total - pagos) > 0.009) {
+      alert("Os pagamentos não fecham com o total.")
+      return
+    }
+
+    // PIX → vai para a tela dedicada
+    if (toNumber(vPix) > 0) {
+      nav("/pix", {
+        state: {
+          orderId,
+          amount: toNumber(vPix),
+          cart,
+          from: "finalizacao",
+          doc,
+          idFiscal,
+        },
+      })
+      return
+    }
+
+    // Mock NFC-e/SAT: imprime e encerra
+    await printText(
+      `[MOCK] Confirmação: R$ ${money(total)} | CASH ${money(vCash)} | TEF ${money(vTef)} | DOC ${doc}${idFiscal ? " (" + idFiscal + ")" : ""}`
+    )
+    removeCartDraft(orderId)
+    alert("Pagamento confirmado (mock). Comanda encerrada.")
+    nav("/relatorioxz")
   }
 
   return (
-    <div style={{ padding: 16 }}>
-      <h2>Finalização de Comanda</h2>
+    <div className="container">
+      <h2>Finalização</h2>
 
-      <div style={{ display:'flex', gap:8, marginBottom:16, alignItems:'center' }}>
-        <input
-          type="text"
-          value={comandaNum}
-          onChange={e=>setComandaNum(e.target.value)}
-          onKeyDown={onComandaKey}
-          placeholder="Digite ou leia nº comanda"
-          inputMode="numeric"
-          style={{ padding:8 }}
-        />
-        <button onClick={buscarComanda}>Buscar</button>
-      </div>
+      {/* Campo único: Nº comanda / leitor */}
+      {!orderId && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <label className="small muted">Nº Comanda / Código de Barras</label>
+          <div className="row" style={{ gap: 8 }}>
+            <input
+              autoFocus
+              value={orderIdInput}
+              onChange={(e) => setOrderIdInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") loadByOrder()
+              }}
+              placeholder="Ex.: 15 ou código"
+              style={{ width: 220 }}
+            />
+            <button className="btn btn-primary" onClick={loadByOrder}>Buscar</button>
+            <button onClick={() => nav("/venda")} className="btn">Voltar</button>
+          </div>
+          <p className="muted small" style={{ marginTop: 8 }}>
+            Dica: deixe o cursor neste campo e use o leitor; a leitura (com Enter ao final)
+            carregará automaticamente a comanda.
+          </p>
+        </div>
+      )}
 
-      {!order && <p>Digite ou leia o número da comanda para continuar.</p>}
-
-      {order && (
+      {orderId != null && (
         <>
-          <h3>Itens da Comanda {comandaNum}</h3>
-
-          <table style={{ width:'100%', borderCollapse:'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom:'1px solid #eee', textAlign:'left' }}>
-                <th style={{ padding:8 }}>Item</th>
-                <th style={{ padding:8, width:160 }}>Qtd {order.items.some(i=>i.isWeight)?'(kg)':''}</th>
-                <th style={{ padding:8, width:160 }}>
-                  Preço un.
-                  {hasRole('GERENTE') && (
-                    <label style={{ marginLeft:12, fontSize:12 }}>
-                      <input
-                        type="checkbox"
-                        checked={allowEditPrice}
-                        onChange={e=>setAllowEditPrice(e.target.checked)}
-                      /> {' '}Permitir editar
-                    </label>
-                  )}
-                </th>
-                <th style={{ padding:8, width:120 }}>Total</th>
-                <th style={{ padding:8, width:120 }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {order.items.map(i => (
-                <tr key={i.id} style={{ borderBottom:'1px solid #f5f5f5' }}>
-                  <td style={{ padding:8 }}>{i.name}</td>
-
-                  <td style={{ padding:8 }}>
-                    <input
-                      type="number"
-                      step={i.isWeight ? 0.001 : 1}
-                      min={0}
-                      value={i.qty}
-                      onChange={e=>setQty(i.id, Number(e.target.value || 0))}
-                      style={{ width:120 }}
-                    />
-                  </td>
-
-                  <td style={{ padding:8 }}>
-                    {allowEditPrice ? (
-                      <input
-                        type="number"
-                        step={0.01}
-                        min={0}
-                        value={i.unitPrice}
-                        onChange={e=>setUnitPrice(i.id, Number(e.target.value || 0))}
-                        style={{ width:120 }}
-                      />
-                    ) : (
-                      <span style={{ opacity:.7 }}>R$ {i.unitPrice.toFixed(2)}</span>
-                    )}
-                  </td>
-
-                  <td style={{ padding:8 }}><b>R$ {i.total.toFixed(2)}</b></td>
-                  <td style={{ padding:8 }}>
-                    <button onClick={()=>removerItem(i.id)}>Remover</button>
-                  </td>
-                </tr>
-              ))}
-              {order.items.length===0 && (
-                <tr><td style={{ padding:8 }} colSpan={5}><i>Nenhum item.</i></td></tr>
-              )}
-            </tbody>
-          </table>
-
-          <div style={{ marginTop:12, display:'flex', gap:8, flexWrap:'wrap' }}>
-            <button onClick={() => addExtra('Chocolate', 5)}>+ Chocolate</button>
-            <button onClick={() => addExtra('Sorvete', 10)}>+ Sorvete</button>
+          <div className="pill small">
+            Comanda <b>#{orderId}</b>
           </div>
 
-          <h3 style={{ marginTop:16 }}>Total: R$ {order.total.toFixed(2)}</h3>
+          <div className="card" style={{ marginTop: 12 }}>
+            <h3 className="card-title">Itens</h3>
+            {!cart.length && <div className="muted">Nenhum item na comanda.</div>}
 
-          <hr style={{ margin: '16px 0' }} />
-
-          {/* Documento - com atalhos: F2/F3/F4 */}
-          <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
-            <label>Documento:</label>
-            <select title="F2/F3/F4" value={mode} onChange={e=>setMode(e.target.value as ReceiptMode)}>
-              <option value="NAO_FISCAL">Não fiscal (Orçamento) — F2</option>
-              <option value="FISCAL_NFCE">Fiscal (NFC-e) — F3</option>
-              <option value="FISCAL_SAT">Fiscal (SAT – legado) — F4</option>
-            </select>
-
-            {mode === 'FISCAL_NFCE' && (
-              <>
-                <select value={idType} onChange={e=>setIdType(e.target.value as CustomerIdType)}>
-                  <option value="NONE">Sem identificação</option>
-                  <option value="CPF">CPF</option>
-                  <option value="CNPJ">CNPJ</option>
-                </select>
-                <input
-                  ref={taxInputRef}
-                  value={taxId}
-                  onChange={e=>setTaxId(e.target.value)}
-                  placeholder="CPF/CNPJ (só números)"
-                />
-              </>
+            {!!cart.length && (
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th style={{ width: "40%" }}>Item</th>
+                    <th>Qtd (kg/un)</th>
+                    <th>Preço un.</th>
+                    <th>Total</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {cart.map((it) => (
+                    <tr key={it.id}>
+                      <td>{it.name}</td>
+                      <td>
+                        <input
+                          value={String(it.qty)}
+                          onChange={(e) => updateQty(it, e.target.value)}
+                          className="input-sm"
+                          style={{ width: 90, textAlign: "right" }}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          value={String(it.price)}
+                          onChange={(e) => updatePrice(it, e.target.value)}
+                          className="input-sm"
+                          style={{ width: 90, textAlign: "right" }}
+                          disabled={!canEditPrice}
+                          title={
+                            canEditPrice
+                              ? "Editar preço (gerente/admin)"
+                              : "Somente gerente/admin podem editar preço"
+                          }
+                        />
+                      </td>
+                      <td>R$ {money(toNumber(it.qty) * toNumber(it.price))}</td>
+                      <td>
+                        <button className="btn" onClick={() => removeItem(it)}>Remover</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <th colSpan={3} style={{ textAlign: "right" }}>Total:</th>
+                    <th>R$ {money(total)}</th>
+                    <th />
+                  </tr>
+                </tfoot>
+              </table>
             )}
           </div>
 
-          {/* Pagamentos - atalhos: F6/F7/F8 e Ctrl+Enter */}
-          <div style={{ marginTop:12 }}>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 200px 200px 200px', gap:8, alignItems:'center' }}>
-              <div>Pagamentos</div>
-              <NumberInput
-                label="Dinheiro — F6"
-                value={paySplit.CASH}
-                onChange={v=>setPaySplit(p=>({...p, CASH: v}))}
-              />
-              <NumberInput
-                label="PIX — F7"
-                value={paySplit.PIX}
-                onChange={v=>setPaySplit(p=>({...p, PIX: v}))}
-              />
-              <NumberInput
-                label="TEF — F8"
-                value={paySplit.TEF}
-                onChange={v=>setPaySplit(p=>({...p, TEF: v}))}
-              />
+          <div className="card">
+            <h3 className="card-title">Documento</h3>
+            <div className="row" style={{ gap: 8, marginBottom: 8 }}>
+              <button
+                className={`pill ${doc === "NAO_FISCAL" ? "active" : ""}`}
+                onClick={() => setDoc("NAO_FISCAL")}
+                title="ALT+N"
+              >
+                Não fiscal (Orçamento)
+              </button>
+              <button
+                className={`pill ${doc === "NFCE" ? "active" : ""}`}
+                onClick={() => setDoc("NFCE")}
+                title="F3"
+              >
+                Fiscal (NFC-e)
+              </button>
+              <button
+                className={`pill ${doc === "SAT" ? "active" : ""}`}
+                onClick={() => setDoc("SAT")}
+              >
+                Fiscal (SAT — legado)
+              </button>
             </div>
-
-            <div style={{ marginTop:8, display:'flex', gap:8, flexWrap:'wrap' }}>
-              <button onClick={()=>order && setPaySplit({ CASH: order.total, PIX: 0, TEF: 0 })}>100% Dinheiro (F6)</button>
-              <button onClick={()=>order && setPaySplit({ CASH: 0, PIX: order.total, TEF: 0 })}>100% PIX (F7)</button>
-              <button onClick={()=>order && setPaySplit({ CASH: 0, PIX: 0, TEF: order.total })}>100% TEF (F8)</button>
-            </div>
-
-            <div style={{ marginTop:8, display:'flex', justifyContent:'space-between' }}>
-              <div>Subtotal informado:</div>
-              <b>R$ {sumSplit.toFixed(2)}</b>
+            <div className="row" style={{ gap: 8 }}>
+              <input
+                placeholder="CPF/CNPJ (opcional)"
+                value={idFiscal}
+                onChange={(e) => setIdFiscal(e.target.value)}
+                style={{ width: 240 }}
+              />
             </div>
           </div>
 
-          <div style={{ marginTop:16 }}>
-            <button onClick={confirm} style={{ background:'#0b5', color:'#fff', padding:'8px 12px' }} title="Ctrl+Enter">
-              Confirmar Pagamento (Ctrl+Enter)
+          <div className="card">
+            <h3 className="card-title">Pagamentos</h3>
+            <div className="grid grid-3">
+              <div>
+                <label>Dinheiro <span className="muted">F6</span></label>
+                <div className="row" style={{ gap: 8 }}>
+                  <input
+                    value={vCash}
+                    onChange={(e) => setVCash(e.target.value)}
+                    className="input-lg"
+                    style={{ width: 140, textAlign: "right" }}
+                  />
+                  <button onClick={() => set100("cash")}>100%</button>
+                </div>
+              </div>
+
+              <div>
+                <label>PIX <span className="muted">F7</span></label>
+                <div className="row" style={{ gap: 8 }}>
+                  <input
+                    value={vPix}
+                    onChange={(e) => setVPix(e.target.value)}
+                    className="input-lg"
+                    style={{ width: 140, textAlign: "right" }}
+                  />
+                  <button onClick={() => set100("pix")}>100%</button>
+                </div>
+              </div>
+
+              <div>
+                <label>Cartão (TEF) <span className="muted">F8</span></label>
+                <div className="row" style={{ gap: 8 }}>
+                  <input
+                    value={vTef}
+                    onChange={(e) => setVTef(e.target.value)}
+                    className="input-lg"
+                    style={{ width: 140, textAlign: "right" }}
+                  />
+                  <button onClick={() => set100("tef")}>100%</button>
+                </div>
+              </div>
+            </div>
+
+            <div className="row" style={{ gap: 16, marginTop: 12 }}>
+              <div className="pill">Total: <b>R$ {money(total)}</b></div>
+              <div className="pill">Pago: <b>R$ {money(pagos)}</b></div>
+              <div className={`pill ${falta === 0 ? "success" : ""}`}>
+                Falta: <b>R$ {money(falta)}</b>
+              </div>
+              <div className="row" style={{ gap: 8 }}>
+                <span className="small muted">Subtotal informado:</span>
+                <input
+                  value={subtotalInfo}
+                  onChange={(e) => setSubtotalInfo(e.target.value)}
+                  className="input-sm"
+                  style={{ width: 120, textAlign: "right" }}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="row" style={{ gap: 8 }}>
+            <button onClick={() => nav("/venda")} className="btn">Voltar</button>
+            <button className="btn btn-primary" onClick={confirmar} title="Ctrl+Enter">
+              Confirmar pagamento (Ctrl+Enter)
             </button>
-            <Link to="/venda"><button style={{ marginLeft:8 }}>Cancelar</button></Link>
           </div>
         </>
       )}
-    </div>
-  )
-}
-
-function NumberInput({ label, value, onChange }: { label: string; value: number; onChange: (v: number)=>void }) {
-  return (
-    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6, alignItems:'center' }}>
-      <small>{label}</small>
-      <input type="number" step={0.01} value={value ?? 0} onChange={e=>onChange(Number(e.target.value || 0))} />
     </div>
   )
 }

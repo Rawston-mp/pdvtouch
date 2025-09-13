@@ -1,377 +1,519 @@
 // src/pages/VendaRapida.tsx
-import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useSession } from '../auth/session'
-import { db } from '../db'
-import type { Order, OrderItem, Product } from '../db/models'
-import { listProducts } from '../db/products'
-import TecladoNumerico from '../components/TecladoNumerico'
-import { requestWeight } from '../mock/devices'
-import ModalPeso from '../components/ModalPeso'
+import React, { useEffect, useMemo, useState } from "react"
+import { useNavigate } from "react-router-dom"
 
-const round2 = (n: number) => Math.round(n * 100) / 100
-const pad = (n: number) => n.toString().padStart(3, '0')
+import { listProducts, type Product } from "../db/products"
+import { requestWeight, printText } from "../mock/devices"
+import {
+  saveCartDraft,
+  loadCartDraft,
+  removeCartDraft,
+  setCurrentOrderId,
+  getCurrentOrderId,
+  clearCurrentOrderId,
+  type CartItem,
+} from "../lib/cartStorage"
+import { useSession } from "../auth/session"
+
+type Category = "Pratos" | "Bebidas" | "Sobremesas" | "Por Peso"
+const CATEGORIES: { key: Category; label: string }[] = [
+  { key: "Pratos", label: "Pratos" },
+  { key: "Bebidas", label: "Bebidas" },
+  { key: "Sobremesas", label: "Sobremesas" },
+  { key: "Por Peso", label: "Por Peso" },
+]
+
+const num = (v: any, fallback = 0) => {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : fallback
+}
+const fmt = (v: any) => num(v).toFixed(2)
+
+function isByWeight(p: Product): boolean {
+  const u = (p as any)?.unit?.toString()?.toLowerCase?.() || ""
+  const bw = (p as any)?.byWeight === true
+  return bw || u === "kg" || u === "peso" || u === "weight"
+}
+function getCategory(p: Product): Category {
+  const raw = ((p as any)?.category ?? "Pratos").toString()
+  const normalized =
+    raw.toLowerCase() === "bebidas" ? "Bebidas" :
+    raw.toLowerCase() === "sobremesas" ? "Sobremesas" :
+    "Pratos"
+  return normalized as Category
+}
 
 export default function VendaRapida() {
-  const { user } = useSession()
   const nav = useNavigate()
+  const { user } = useSession()
+  const role = (user?.role ?? "CAIXA").toUpperCase()
 
-  const isBalanca = user?.role === 'BALANÇA'
+  const canFinalize =
+    role === "ADMIN" || role === "GERENTE" || role === "CAIXA" || role === "ATENDENTE"
 
-  // ---------- COMANDA ----------
-  const [comanda, setComanda] = useState<string>('')
-  const comandaOk = useMemo(() => {
-    const n = Number(comanda)
-    return !!comanda && Number.isFinite(n) && n >= 1 && n <= 100
-  }, [comanda])
-  const [loadingOrder, setLoadingOrder] = useState(false)
-
-  // ---------- catálogo / busca ----------
-  const [tab, setTab] = useState<'Pratos' | 'Bebidas' | 'Sobremesas' | 'Por Peso'>('Pratos')
-  const [q, setQ] = useState('')
+  // catálogo
   const [catalog, setCatalog] = useState<Product[]>([])
-  useEffect(() => { (async () => setCatalog(await listProducts()))() }, [])
+  const [activeCat, setActiveCat] = useState<Category>("Pratos")
+  const [search, setSearch] = useState("")
 
-  const filtered = useMemo(() => {
-    const s = q.trim().toLowerCase()
-    return catalog.filter(p =>
-      (p.category === tab || (tab === 'Por Peso' && !!p.pricePerKg)) &&
-      (!s || p.name.toLowerCase().includes(s))
-    )
-  }, [catalog, q, tab])
+  // campo único (comanda ou código/PLU)
+  const [unifiedInput, setUnifiedInput] = useState("")
 
-  // ---------- carrinho ----------
-  const [items, setItems] = useState<OrderItem[]>([])
-  const total = useMemo(() => round2(items.reduce((s, i) => s + i.total, 0)), [items])
+  // estado do carrinho
+  const [cart, setCart] = useState<CartItem[]>([])
+  const [quickQty, setQuickQty] = useState<string>("0")
+  const [pesoItemId, setPesoItemId] = useState<string | null>(null)
 
-  async function aplicarComanda() {
-    if (!comandaOk) return alert('Informe um nº de comanda entre 1 e 100.')
-    setLoadingOrder(true)
-    try {
-      const id = 'COMANDA-' + pad(Number(comanda))
-      const existing = await db.orders.get(id)
-      setItems(existing && existing.status === 'OPEN' ? existing.items : [])
-    } finally {
-      setLoadingOrder(false)
-    }
-  }
+  // comanda
+  const [orderId, setOrderId] = useState<number | null>(null)
+  const orderActive = orderId != null
 
-  async function salvarComandaOpen() {
-    if (!comandaOk) return
-    const order: Order = {
-      id: 'COMANDA-' + pad(Number(comanda)),
-      createdAt: Date.now(),
-      status: 'OPEN',
-      items,
-      payments: [],
-      total
-    }
-    await db.orders.put(order)
-  }
-
-  // ---------- adicionar produtos ----------
-  function addUnit(p: Product, qty = 1) {
-    if (!isBalanca && !comandaOk) return alert('Leia/digite a comanda primeiro.')
-    const item: OrderItem = {
-      id: crypto.randomUUID(),
-      productId: p.id!,
-      name: p.name,
-      qty,
-      unitPrice: p.price ?? 0,
-      total: round2((p.price ?? 0) * qty),
-      isWeight: false,
-      route: p.route
-    }
-    setItems(prev => [...prev, item])
-  }
-
-  // modal de peso
-  const [pesoModalOpen, setPesoModalOpen] = useState(false)
-  const [pesoProdutoSel, setPesoProdutoSel] = useState<Product | null>(null)
-  const [pesoSugerido, setPesoSugerido] = useState<number | null>(null)
-
-  async function addWeight(p: Product) {
-    if (!isBalanca && !comandaOk) return alert('Leia/digite a comanda primeiro.')
-    let kg: number | null | undefined
-    try {
-      const w = await requestWeight()
-      kg = w?.weightKg
-    } catch { kg = null }
-    if (!kg || kg <= 0) {
-      setPesoProdutoSel(p)
-      setPesoSugerido(null)
-      setPesoModalOpen(true)
-      return
-    }
-    incluirPeso(p, kg)
-  }
-
-  function incluirPeso(p: Product, kg: number) {
-    const priceKg = p.pricePerKg ?? 0
-    const item: OrderItem = {
-      id: crypto.randomUUID(),
-      productId: p.id!,
-      name: p.name,
-      qty: round2(kg),
-      unitPrice: priceKg,
-      total: round2(kg * priceKg),
-      isWeight: true,
-      route: p.route
-    }
-    if (item.qty <= 0 || item.total <= 0) { alert('Peso inválido.'); return }
-    setItems(prev => [...prev, item])
-  }
-
-  function inc(id: string) {
-    setItems(prev => prev.map(i => i.id === id ? { ...i, qty: i.qty + 1, total: round2((i.qty + 1) * i.unitPrice) } : i))
-  }
-  function dec(id: string) {
-    setItems(prev => prev.flatMap(i => {
-      if (i.id !== id) return [i]
-      const q = i.qty - 1
-      return q <= 0 ? [] : [{ ...i, qty: q, total: round2(q * i.unitPrice) }]
-    }))
-  }
-  function removeItem(id: string) { setItems(prev => prev.filter(i => i.id !== id)) }
-  function clearCart() { setItems([]) }
-
-  // ---------- leitor/código ----------
-  const [codigo, setCodigo] = useState('')
-
-  function normaliza(s: string) { return (s || '').trim() }
-
-  function findByCodeOrName(input: string): Product | null {
-    const x = normaliza(input)
-    if (!x) return null
-    const exactCode = catalog.find(p => (p as any).code && String((p as any).code).toLowerCase() === x.toLowerCase())
-    if (exactCode) return exactCode
-    const byId = catalog.find(p => String(p.id ?? '').toLowerCase() === x.toLowerCase())
-    if (byId) return byId
-    const byName = catalog.find(p => p.name.toLowerCase() === x.toLowerCase()) ||
-                   catalog.find(p => p.name.toLowerCase().includes(x.toLowerCase()))
-    return byName ?? null
-  }
-
-  function onEnterCodigo() {
-    if (!isBalanca && !comandaOk) { alert('Leia/digite a comanda primeiro.'); return }
-    const p = findByCodeOrName(codigo)
-    if (!p) { alert('Produto não encontrado.'); return }
-    if (p.pricePerKg) addWeight(p)
-    else addUnit(p, 1)
-    setCodigo('')
-  }
-
-  // ---------- finalizar/ir para caixa ----------
-  async function finalizar() {
-    if (!isBalanca) await salvarComandaOpen()
-    if (!isBalanca && comandaOk) {
-      sessionStorage.setItem('pdv_pre_comanda', pad(Number(comanda)))
-      nav('/finalizacao')
-      return
-    }
-    alert('Fluxo de finalização atualizado: use a tela Finalização.')
-  }
-
-  // ---------- próximo cliente (balança) ----------
-  async function proximoCliente() {
-    if (!comandaOk) return
-    await salvarComandaOpen()
-    setItems([])
-    setComanda('')
-    setCodigo('')
-    setQ('')
-    alert('Comanda salva. Próximo cliente!')
-  }
-
-  // Atalhos
+  // boot
   useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'F4') { e.preventDefault(); finalizar() }
-      if (isBalanca && e.key === 'Escape') { e.preventDefault(); proximoCliente() }
-      if (e.key === 'Enter' && (document.activeElement as HTMLElement)?.id === 'comandaInput') {
-        e.preventDefault(); aplicarComanda()
-      }
-      if (e.key === 'Enter' && (document.activeElement as HTMLElement)?.id === 'barcodeInput') {
-        e.preventDefault(); onEnterCodigo()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [comanda, codigo, items, isBalanca])
+    ;(async () => {
+      const prods = await listProducts()
+      setCatalog(prods || [])
 
-  useEffect(() => {
-    const pre = sessionStorage.getItem('pdv_pre_comanda')
-    if (pre) {
-      setComanda(String(Number(pre)))
-      sessionStorage.removeItem('pdv_pre_comanda')
-      aplicarComanda()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+      const current = getCurrentOrderId()
+      if (current != null) {
+        setOrderId(current)
+        const loaded = loadCartDraft(current)
+        if (loaded) {
+          setCart(loaded.map((d) => ({ ...d, price: num(d.price), qty: num(d.qty) })))
+        }
+      }
+    })()
   }, [])
 
+  // persistência POR COMANDA: salva toda vez que carrinho muda
+  useEffect(() => {
+    if (orderActive) saveCartDraft(orderId!, cart)
+  }, [cart, orderActive, orderId])
+
+  // ESC = Próximo cliente somente BALANÇA
+  useEffect(() => {
+    if (role !== "BALANCA" && role !== "BALANÇA") return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault()
+        nextClient()
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [role, orderId, cart])
+
+  const filtered = useMemo(() => {
+    let base = catalog
+    if (activeCat === "Por Peso") base = base.filter((p) => isByWeight(p))
+    else base = base.filter((p) => getCategory(p) === activeCat && !isByWeight(p))
+
+    if (search.trim()) {
+      const s = search.toLowerCase()
+      base = base.filter(
+        (p: any) => p.name?.toLowerCase?.().includes(s) || p.code?.toLowerCase?.() === s
+      )
+    }
+    return base
+  }, [catalog, activeCat, search])
+
+  const total = useMemo(
+    () => cart.reduce((acc, it) => acc + num(it.price) * num(it.qty), 0),
+    [cart]
+  )
+
+  // --------------- Comanda / Código — CAMPO ÚNICO ---------------
+  function applyUnified() {
+    const s = unifiedInput.trim()
+    if (!s) return
+
+    // só dígitos -> comanda 1..100
+    if (/^\d+$/.test(s)) {
+      const n = num(s, NaN)
+      if (Number.isFinite(n) && n >= 1 && n <= 100) {
+        setOrderId(n)
+        setCurrentOrderId(n)
+
+        // carrega rascunho da comanda
+        const d = loadCartDraft(n)
+        setCart(
+          (d || []).map((x) => ({ ...x, price: num(x.price), qty: num(x.qty) }))
+        )
+        setUnifiedInput("")
+        return
+      }
+    }
+
+    // se não foi comanda, trata como código/PLU (exige comanda ativa)
+    if (!orderActive) {
+      alert("Antes de lançar itens por código, informe o Nº da comanda (1–100).")
+      return
+    }
+    const p = catalog.find((x: any) => x.code && x.code.toLowerCase() === s.toLowerCase())
+    if (!p) {
+      alert("Código não encontrado.")
+      return
+    }
+    addProduct(p, isByWeight(p) ? 0 : Math.max(1, num(quickQty, 1)))
+    setUnifiedInput("")
+  }
+
+  function clearOrder() {
+    setOrderId(null)
+    clearCurrentOrderId()
+    setCart([])
+    setPesoItemId(null)
+  }
+
+  // --------------- Carrinho ----------------
+  function addProduct(p: Product, q?: number) {
+    if (!orderActive) {
+      alert("Antes de lançar itens, informe a Nº comanda.")
+      return
+    }
+    const price = num((p as any)?.price)
+    const weight = isByWeight(p)
+    const qty = typeof q === "number" ? num(q, 0) : weight ? 0 : 1
+
+    const idx = cart.findIndex((c) => c.id === p.id)
+    if (idx >= 0) {
+      const updated = [...cart]
+      const current = updated[idx]
+      updated[idx] = {
+        ...current,
+        qty: current.unit === "unit" ? num(current.qty) + qty : current.qty,
+        price,
+      }
+      setCart(updated)
+    } else {
+      setCart((c) => [
+        ...c,
+        {
+          id: p.id,
+          name: (p as any)?.name ?? "Item",
+          unit: weight ? "kg" : "unit",
+          price,
+          qty,
+          code: (p as any)?.code,
+        },
+      ])
+    }
+    if (weight) setPesoItemId(p.id)
+  }
+
+  function inc(it: CartItem) {
+    if (!orderActive || it.unit !== "unit") return
+    setCart((c) => c.map((x) => (x.id === it.id ? { ...x, qty: num(x.qty) + 1 } : x)))
+  }
+  function dec(it: CartItem) {
+    if (!orderActive || it.unit !== "unit") return
+    setCart((c) =>
+      c
+        .map((x) => (x.id === it.id ? { ...x, qty: Math.max(0, num(x.qty) - 1) } : x))
+        .filter((x) => x.unit === "kg" || num(x.qty) > 0)
+    )
+  }
+  function removeItem(it: CartItem) {
+    if (!orderActive) return
+    setCart((c) => c.filter((x) => x.id !== it.id))
+    if (pesoItemId === it.id) setPesoItemId(null)
+  }
+  /** Limpa SOMENTE a tela atual (não apaga o rascunho da comanda). */
+  function clear() {
+    setCart([])
+    setPesoItemId(null)
+    setQuickQty("0")
+  }
+  /** Excluir rascunho da comanda (opcional, não usado por padrão). */
+  function deleteDraftPermanently() {
+    if (!orderActive) return
+    if (confirm(`Excluir rascunho da comanda ${orderId}?`)) {
+      removeCartDraft(orderId!)
+      clear()
+    }
+  }
+
+  // --------------- Keypad ----------------
+  function onKeypad(k: string) {
+    if (!orderActive) return
+    if (k === "C") return setQuickQty("0")
+    if (k === "B") return setQuickQty((v) => (v.length <= 1 ? "0" : v.slice(0, -1)))
+    setQuickQty((v) => (v === "0" ? k : v.length >= 5 ? v : v + k))
+  }
+  function applyQuickQty() {
+    if (!orderActive) return
+    const q = Math.max(0, num(quickQty))
+    if (!q) return
+    alert("Dica: após definir, clique em um produto unitário.")
+  }
+
+  // --------------- Peso ----------------
+  async function lerPeso() {
+    if (!orderActive) return alert("Informe a Nº comanda primeiro.")
+    if (!pesoItemId) return alert("Selecione um item por peso.")
+    try {
+      const g = await requestWeight()
+      const kg = Math.max(0, num(g) / 1000)
+      setCart((c) => c.map((x) => (x.id === pesoItemId ? { ...x, qty: kg } : x)))
+    } catch {
+      const manual = prompt("Balança indisponível. Informe o peso (kg):", "0.000")
+      if (!manual) return
+      const kg = Math.max(0, num(manual.toString().replace(",", ".")))
+      setCart((c) => c.map((x) => (x.id === pesoItemId ? { ...x, qty: kg } : x)))
+    }
+  }
+
+  // --------------- Fluxos finais ----------------
+  function goToCheckout() {
+    if (!orderActive) return alert("Informe a Nº comanda.")
+    if (!cart.length) return alert("Carrinho vazio.")
+    nav("/finalizacao", { state: { cart, orderId } })
+  }
+
+  /** Próximo cliente (BALANÇA): salva rascunho da comanda e limpa a UI.
+   *  NÃO apaga o rascunho salvo.
+   */
+  function nextClient() {
+    if (!orderActive) return
+    saveCartDraft(orderId!, cart) // garante persistência
+    // limpa somente a estação da balança
+    setCart([])
+    setPesoItemId(null)
+    setQuickQty("0")
+    clearCurrentOrderId()
+    setOrderId(null)
+  }
+
+  // ---------------------- UI ----------------------
   return (
-    <>
-      {/* MODAL DE PESO */}
-      <ModalPeso
-        open={pesoModalOpen}
-        initialKg={pesoSugerido}
-        onClose={() => { setPesoModalOpen(false); setPesoProdutoSel(null) }}
-        onConfirm={(kg) => {
-          if (pesoProdutoSel) incluirPeso(pesoProdutoSel, kg)
-          setPesoModalOpen(false)
-          setPesoProdutoSel(null)
-        }}
-      />
+    <div className="container">
+      {/* Campo único de comanda/PLU */}
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div className="row" style={{ gap: 12, alignItems: "end", flexWrap: "wrap" }}>
+          <div className="col" style={{ minWidth: 320 }}>
+            <label className="small muted">Comanda (1–100) ou Código/PLU</label>
+            <div className="row" style={{ gap: 8 }}>
+              <input
+                value={unifiedInput}
+                onChange={(e) => setUnifiedInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && applyUnified()}
+                placeholder="Ex.: 15 (comanda) | 12345 (PLU)"
+                style={{ width: 260 }}
+              />
+              <button className="btn btn-primary" onClick={applyUnified}>Aplicar</button>
 
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 360px', gap:12, height:'calc(100vh - 64px)' }}>
-        {/* Lado esquerdo */}
-        <div style={{ padding:12, overflow:'auto' }}>
-          {/* Comanda */}
-          <div style={{ display:'grid', gridTemplateColumns:'160px 140px 120px', gap:8, marginBottom:12, alignItems:'center' }}>
-            <label><b>Nº Comanda (1–100)</b></label>
-            <input
-              id="comandaInput"
-              type="text"
-              inputMode="numeric"
-              value={comanda}
-              onChange={e=>setComanda(e.target.value)}
-              placeholder="Digite ou leia o código"
-            />
-            <button onClick={aplicarComanda} disabled={!comandaOk || loadingOrder}>
-              {loadingOrder ? 'Carregando...' : 'Carregar/Aplicar'}
-            </button>
-          </div>
-
-          {/* Leitor / Código */}
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 140px', gap:8, marginBottom:12, alignItems:'center' }}>
-            <input
-              id="barcodeInput"
-              placeholder="Código de barras ou nome do produto"
-              value={codigo}
-              onChange={e=>setCodigo(e.target.value)}
-            />
-            <button onClick={onEnterCodigo}>Adicionar (Enter)</button>
-          </div>
-
-          {/* Tabs & Busca (opcional) */}
-          <div style={{ display:'flex', gap:8, marginBottom:8 }}>
-            {(['Pratos','Bebidas','Sobremesas','Por Peso'] as const).map(t => (
-              <button key={t}
-                onClick={()=>setTab(t)}
-                style={{ padding:'6px 10px', borderRadius:6, border:'1px solid #ddd',
-                        background: tab===t ? '#efefef' : '#fff' }}>
-                {t}
-              </button>
-            ))}
-          </div>
-
-          <input
-            placeholder="Buscar por nome..."
-            value={q}
-            onChange={e=>setQ(e.target.value)}
-            style={{ width:'100%', padding:8, border:'1px solid #ddd', borderRadius:6, marginBottom:10 }}
-          />
-
-          {/* Grade */}
-          <div style={{ opacity: comandaOk ? 1 : .5, pointerEvents: comandaOk ? 'auto' : 'none' }}>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(220px,1fr))', gap:10 }}>
-              {filtered.map(p => (
-                <div key={p.id} style={{ border:'1px solid #eee', borderRadius:8, padding:12 }}>
-                  <div style={{ fontWeight:700 }}>{p.name}</div>
-                  <div style={{ opacity:.7, fontSize:13, margin:'2px 0 8px' }}>
-                    {p.pricePerKg ? `R$ ${p.pricePerKg!.toFixed(2)}/kg` :
-                    (p.price ? `R$ ${p.price!.toFixed(2)}` : '—')}
-                  </div>
-                  {p.pricePerKg ? (
-                    <button onClick={()=>addWeight(p)}>Ler peso</button>
-                  ) : (
-                    <button onClick={()=>addUnit(p,1)}>Adicionar</button>
-                  )}
-                </div>
-              ))}
-              {filtered.length===0 && <div style={{ opacity:.6 }}><i>Nenhum produto.</i></div>}
-            </div>
-          </div>
-
-          {!comandaOk && (
-            <div style={{ marginTop:10, color:'#a00', fontSize:12 }}>
-              Informe a comanda para habilitar lançamentos.
-            </div>
-          )}
-        </div>
-
-        {/* Lado direito */}
-        <div style={{ borderLeft:'1px solid #eee', padding:12, display:'grid', gridTemplateRows:'auto auto 1fr auto', gap:12 }}>
-          <div>
-            <div style={{ fontWeight:700, marginBottom:8 }}>Quantidade rápida (itens unitários)</div>
-            <TecladoNumerico
-              disabled={!comandaOk}
-              onConfirm={(q)=>window.dispatchEvent(new CustomEvent('pdv:setQuickQty',{ detail:q }))}
-            />
-          </div>
-
-          <div>
-            <div style={{ fontWeight:700, margin:'6px 0' }}>Peso (balança)</div>
-            <div>
-              <div style={{ fontSize:11, opacity:.6, marginTop:6 }}>
-                Se o WS não responder, abriremos o modal para digitar o peso.
-              </div>
-            </div>
-          </div>
-
-          <div style={{ overflow:'auto' }}>
-            <h4 style={{ margin:'4px 0' }}>Carrinho</h4>
-            {items.length===0 ? (
-              <div style={{ opacity:.6 }}><i>Nenhum item.</i></div>
-            ) : (
-              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-                {items.map(i=>(
-                  <div key={i.id} style={{ border:'1px solid #eee', borderRadius:8, padding:8, display:'grid', gridTemplateColumns:'1fr auto auto auto', gap:8, alignItems:'center' }}>
-                    <div>
-                      <div style={{ fontWeight:600 }}>{i.name}</div>
-                      <div style={{ fontSize:12, opacity:.7 }}>
-                        {i.isWeight ? `${i.qty.toFixed(3)} kg x R$ ${i.unitPrice.toFixed(2)}` :
-                          `${i.qty} x R$ ${i.unitPrice.toFixed(2)}`}
-                      </div>
-                    </div>
-                    <div><b>R$ {i.total.toFixed(2)}</b></div>
-                    {!i.isWeight && (
-                      <div style={{ display:'flex', gap:6 }}>
-                        <button onClick={()=>dec(i.id)}>-</button>
-                        <button onClick={()=>inc(i.id)}>+</button>
-                      </div>
-                    )}
-                    <button onClick={()=>removeItem(i.id)}>Remover</button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div>
-            <div style={{ display:'flex', justifyContent:'space-between', marginBottom:10 }}>
-              <div>Total</div>
-              <b>R$ {total.toFixed(2)}</b>
-            </div>
-
-            <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-              <button onClick={clearCart}>Limpar</button>
-              {isBalanca ? (
-                <button onClick={proximoCliente} style={{ background:'#555', color:'#fff' }}>
-                  Próximo cliente (Esc)
-                </button>
-              ) : (
+              {orderActive && (
                 <>
-                  <button onClick={salvarComandaOpen} disabled={!comandaOk}>Salvar Comanda</button>
-                  <button onClick={finalizar} style={{ background:'#0b5', color:'#fff' }} disabled={!comandaOk}>
-                    Ir para Finalização (F4)
-                  </button>
+                  <div className="pill small success">Comanda ativa: <b>{orderId}</b></div>
+                  <button onClick={clearOrder} title="Limpar comanda atual">Limpar</button>
                 </>
               )}
             </div>
           </div>
+
+          <div className="row" style={{ gap: 8, flex: 1, minWidth: 260 }}>
+            <input
+              placeholder="Buscar por nome..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{ width: "100%" }}
+            />
+          </div>
         </div>
       </div>
-    </>
+
+      {/* Abas */}
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div className="row" style={{ gap: 8 }}>
+          {CATEGORIES.map((c) => (
+            <button
+              key={c.key}
+              className={`pill ${activeCat === c.key ? "active" : ""}`}
+              onClick={() => setActiveCat(c.key)}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-2" style={{ alignItems: "start" }}>
+        {/* Catálogo */}
+        <section className="card">
+          <h3 className="card-title">Catálogo</h3>
+
+          {filtered.length === 0 && (
+            <div className="muted">Nenhum item para os filtros atuais.</div>
+          )}
+
+          <div className="grid grid-3">
+            {filtered.map((p) => {
+              const weight = isByWeight(p)
+              const price = num((p as any)?.price)
+              return (
+                <article key={p.id} className="product">
+                  <div className="product-title">{(p as any)?.name ?? "Item"}</div>
+                  <div className="product-price">
+                    {weight ? <span>R$ {fmt(price)} / kg</span> : <span>R$ {fmt(price)}</span>}
+                  </div>
+                  <div className="hr" />
+                  <div className="row" style={{ justifyContent: "space-between" }}>
+                    {weight ? (
+                      <button
+                        className="btn"
+                        disabled={!orderActive}
+                        onClick={() => addProduct(p)}
+                        title={orderActive ? "Seleciona item para leitura do peso" : "Informe a comanda"}
+                      >
+                        Selecionar p/ peso
+                      </button>
+                    ) : (
+                      <button
+                        className="btn"
+                        disabled={!orderActive}
+                        onClick={() => addProduct(p, Math.max(1, num(quickQty, 1)))}
+                        title={orderActive ? "Adicionar (usa quantidade rápida se definida)" : "Informe a comanda"}
+                      >
+                        Adicionar
+                      </button>
+                    )}
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+        </section>
+
+        {/* Lateral */}
+        <aside className="card cart cart-sticky">
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <h3 className="card-title" style={{ marginBottom: 6 }}>
+              Quantidade rápida (itens unitários)
+            </h3>
+            <input
+              className="input-lg"
+              style={{ width: 120, textAlign: "center" }}
+              value={quickQty}
+              onChange={(e) => setQuickQty(e.target.value.replace(/[^\d]/g, "") || "0")}
+              disabled={!orderActive}
+            />
+          </div>
+
+          <div className="keypad" style={{ marginBottom: 12 }}>
+            {["7","8","9","4","5","6","1","2","3",".","0","B"].map((k) => (
+              <button
+                key={k}
+                disabled={!orderActive}
+                onClick={() => onKeypad(k === "." ? "" : k)}
+              >
+                {k === "B" ? "⌫" : k}
+              </button>
+            ))}
+          </div>
+
+          <div className="row" style={{ gap: 8, marginBottom: 18 }}>
+            <button className="btn btn-primary" disabled={!orderActive} onClick={applyQuickQty}>
+              Confirmar
+            </button>
+            <button disabled={!orderActive} onClick={() => onKeypad("C")}>Limpar</button>
+          </div>
+
+          {/* Peso */}
+          <div className="card" style={{ padding: 12, marginBottom: 18 }}>
+            <div className="row" style={{ justifyContent: "space-between", marginBottom: 8 }}>
+              <strong>Peso (balança)</strong>
+              <span className="small muted">Mock WS: <code>npm run mock:ws</code></span>
+            </div>
+            <div className="row" style={{ gap: 8 }}>
+              <button className="btn btn-primary" disabled={!orderActive} onClick={lerPeso}>
+                Ler peso (mock)
+              </button>
+              <select
+                disabled={!orderActive}
+                value={pesoItemId ?? ""}
+                onChange={(e) => setPesoItemId(e.target.value || null)}
+              >
+                <option value="">Selecione um item por peso</option>
+                {cart.filter((x) => x.unit === "kg").map((x) => (
+                  <option key={x.id} value={x.id}>{x.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Carrinho */}
+          <h3 className="card-title" style={{ marginBottom: 10 }}>Carrinho</h3>
+          {!cart.length && <div className="muted">Nenhum item.</div>}
+
+          {cart.map((it) => (
+            <div className="cart-item" key={it.id}>
+              <div>
+                <div style={{ fontWeight: 700 }}>{it.name}</div>
+                <div className="small muted">
+                  {it.unit === "kg"
+                    ? `${num(it.qty).toFixed(3)} kg × R$ ${fmt(it.price)}`
+                    : `${num(it.qty)} un × R$ ${fmt(it.price)}`}
+                </div>
+              </div>
+
+              {it.unit === "unit" ? (
+                <div className="row">
+                  <button disabled={!orderActive} onClick={() => dec(it)}>-</button>
+                  <button disabled={!orderActive} onClick={() => inc(it)}>+</button>
+                </div>
+              ) : (
+                <div className="small muted" style={{ textAlign: "right" }}>
+                  R$ {fmt(num(it.price) * num(it.qty))}
+                </div>
+              )}
+
+              <div>
+                <button className="btn" disabled={!orderActive} onClick={() => removeItem(it)}>
+                  Remover
+                </button>
+              </div>
+            </div>
+          ))}
+
+          <div className="cart-total">
+            <span>Total</span>
+            <span>R$ {fmt(total)}</span>
+          </div>
+
+          <div className="row" style={{ gap: 8, marginTop: 12 }}>
+            <button disabled={!orderActive} onClick={clear}>Limpar</button>
+
+            {canFinalize ? (
+              <button
+                className="btn btn-primary"
+                style={{ flex: 1 }}
+                disabled={!orderActive}
+                onClick={goToCheckout}
+              >
+                Ir para Finalização (F4)
+              </button>
+            ) : (
+              <button
+                className="btn btn-primary"
+                style={{ flex: 1 }}
+                disabled={!orderActive}
+                onClick={nextClient}
+                title="Salva rascunho da comanda e prepara a balança para o próximo cliente (ESC)"
+              >
+                Próximo cliente (ESC)
+              </button>
+            )}
+          </div>
+
+          <div className="row" style={{ gap: 8, marginTop: 8 }}>
+            <button disabled={!orderActive} onClick={() => printText("Cupom (mock)")} className="btn">
+              Imprimir cupom (mock)
+            </button>
+            {/* Opcional: botão para excluir rascunho da comanda */}
+            {/* <button disabled={!orderActive} onClick={deleteDraftPermanently}>Apagar rascunho</button> */}
+          </div>
+        </aside>
+      </div>
+    </div>
   )
 }
