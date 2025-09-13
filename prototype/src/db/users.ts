@@ -1,41 +1,38 @@
 // src/db/users.ts
-import { db } from './index'
-import type { DbUser } from './index'
-import type { UserRole } from './models'
+import { db, hashPin, type Role, type User } from "./index"
 
-export async function createUser(name: string, role: UserRole, pin: string, active = true) {
-  const user: DbUser = { name, role, pin, active }
-  const id = await db.users.add(user)
-  return { ...user, id }
-}
-
-export async function listUsers(): Promise<DbUser[]> {
+export async function listUsers(): Promise<User[]> {
   return db.users.toArray()
 }
 
-export async function updateUserPin(id: number, newPin: string) {
-  await db.users.update(id, { pin: newPin })
+export async function createUser(u: { name: string; role: Role; pin: string; active?: boolean }) {
+  const pinHash = await hashPin(u.pin)
+  const user: User = {
+    id: crypto.randomUUID(),
+    name: u.name,
+    role: u.role,
+    pinHash,
+    active: u.active ?? true,
+  }
+  await db.users.put(user)
+  return user
 }
 
-export async function deleteUser(id: number) {
+export async function updateUserPin(id: string, pin: string) {
+  const pinHash = await hashPin(pin)
+  await db.users.update(id, { pinHash })
+}
+
+export async function setUserActive(id: string, active: boolean) {
+  await db.users.update(id, { active })
+}
+
+export async function deleteUser(id: string) {
   await db.users.delete(id)
 }
 
-export async function findByPin(pin: string): Promise<DbUser | null> {
-  const u = await db.users.where('pin').equals(pin).first()
-  if (!u || u.active === false) return null
-  return u
-}
-
-export async function ensureSeedUsers() {
-  const count = await db.users.count()
-  if (count > 0) return
-  const seed: DbUser[] = [
-    { name: 'Administrador', role: 'ADMIN', pin: '1111', active: true },
-    { name: 'Balança',       role: 'BALANÇA', pin: '2222', active: true },
-    { name: 'Gerente',       role: 'GERENTE', pin: '3333', active: true },
-    { name: 'Caixa',         role: 'CAIXA',   pin: '4444', active: true },
-    { name: 'Atendente',     role: 'ATENDENTE', pin: '5555', active: true },
-  ]
-  await db.users.bulkAdd(seed)
+export async function findByPin(pin: string): Promise<User | undefined> {
+  const h = await hashPin(pin)
+  const all = await db.users.toArray()
+  return all.find(u => u.active && u.pinHash === h)
 }

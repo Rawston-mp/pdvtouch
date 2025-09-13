@@ -1,153 +1,133 @@
 // src/db/index.ts
-import Dexie, { Table } from 'dexie'
+import Dexie, { Table } from "dexie"
 
-// Tipos usados nas tabelas (ajusta se seu models.ts tiver nomes diferentes)
-import type {
-  Product,
-  Order,
-  Settings,
-  Printer,
-  Destination,
-  PrinterProfile,
-} from './models'
-import type { UserRole } from './models'
+// Tipos base
+export type Destination = "CLIENTE" | "COZINHA" | "BAR"
+export type PrinterProfile = "ELGIN" | "BEMATECH" | "GENERICA"
 
-/* ===== Tipos auxiliares internos ===== */
-
-export type DbUser = {
-  id?: number
-  name: string
-  role: UserRole
-  pin: string
-  active?: boolean
+export type Settings = {
+  id: "cfg"
+  companyName: string
+  cnpj: string
+  addressLine1: string
+  addressLine2: string
 }
 
-export type DbShift = {
-  id?: number
-  openedAt: number
-  closedAt?: number | null
-  operatorName: string
-  openingAmount?: number
-  closingAmount?: number | null
-}
-
-export type DbAudit = {
-  id?: number
-  ts: number
-  type: string
-  message?: string
-  userName?: string
-}
-
-export type DbCounter = {
-  name: string
-  value: number
-}
-
-export type DbOutbox = {
+export type Printer = {
   id: string
-  kind: 'ORDER' | 'PRINT' | 'SAT' | 'NFCE' | 'TEF' | 'PIX' | string
-  state: 'PENDING' | 'SENT' | 'ERROR'
-  payload: any
-  createdAt: number
-  lastAttemptAt?: number
-  attempts?: number
+  name: string
+  destination: Destination
+  profile: PrinterProfile
 }
 
-/* ===== Banco ===== */
+export type Product = {
+  id: string
+  name: string
+  category: "Pratos" | "Bebidas" | "Sobremesas" | "Por Peso"
+  byWeight: boolean
+  price: number
+  pricePerKg?: number
+  code?: string
+  active: boolean
+}
 
-class PDVDatabase extends Dexie {
-  // Tabelas (tipadas)
-  products!: Table<Product, number>
-  users!: Table<DbUser, number>
-  orders!: Table<Order, string>
-  outbox!: Table<DbOutbox, string>
-  shifts!: Table<DbShift, number>
-  audits!: Table<DbAudit, number>
-  counters!: Table<DbCounter, string>
+export type Role = "ADMIN" | "BALANCA" | "GERENTE" | "CAIXA" | "ATENDENTE"
 
-  // Config / Impressão
-  settings!: Table<Settings, string> // id fixo 'cfg'
-  printers!: Table<Printer, number>
-  profiles!: Table<PrinterProfile, number>
-  destinations!: Table<Destination, number>
+export type User = {
+  id: string
+  name: string
+  role: Role
+  pinHash: string
+  active: boolean
+}
+
+// DB
+class PDVDB extends Dexie {
+  settings!: Table<Settings, string>
+  printers!: Table<Printer, string>
+  products!: Table<Product, string>
+  users!: Table<User, string>
 
   constructor() {
-    super('pdvtouch')
-
-    /**
-     * v1 — estrutura básica
-     */
-    this.version(1).stores({
-      products: '++id',
-      users: '++id,pin,role,active',
-      orders: 'id,status,createdAt',
-      outbox: 'id,kind,state,createdAt',
-      shifts: '++id,openedAt,closedAt',
-      audits: '++id,ts,type',
-      counters: 'name',
-      // as stores abaixo ainda não existiam
-    })
-
-    /**
-     * v2 — índice por name em products
-     */
+    super("pdvtouch-proto")
     this.version(2).stores({
-      products: '++id,name',
+      settings: "id",
+      printers: "id",
+      products: "id, code, category, byWeight",
+      users: "id, role, active"
     })
-
-    /**
-     * v3 — índices para leitor/filtros em products
-     */
-    this.version(3).stores({
-      products: '++id,name,code,category',
+    this.on("populate", async () => {
+      await seedAll(this)
     })
-
-    /**
-     * v4 — adiciona stores de configuração e impressão
-     */
-    this.version(4).stores({
-      // chave única 'cfg'
-      settings: 'id',
-      // impressoras e perfis
-      printers: '++id,name,destination',
-      profiles: '++id,name',
-      destinations: '++id,code,name',
-    })
-
-    // Mapeamento de tabelas
-    this.products = this.table('products')
-    this.users = this.table('users')
-    this.orders = this.table('orders')
-    this.outbox = this.table('outbox')
-    this.shifts = this.table('shifts')
-    this.audits = this.table('audits')
-    this.counters = this.table('counters')
-
-    this.settings = this.table('settings')
-    this.printers = this.table('printers')
-    this.profiles = this.table('profiles')
-    this.destinations = this.table('destinations')
   }
 }
+export const db = new PDVDB()
 
-export const db = new PDVDatabase()
+// Util: hash de PIN (SHA-256 → hex)
+export async function hashPin(pin: string): Promise<string> {
+  const enc = new TextEncoder().encode(pin)
+  const buf = await crypto.subtle.digest("SHA-256", enc)
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("")
+}
 
-/**
- * Alguns módulos antigos podem importar initDb(). Mantemos por compatibilidade.
- * Aqui só garantimos que o DB está aberto.
- */
+// Seeds
+async function seedAll(d: PDVDB) {
+  // Settings
+  await d.settings.put({
+    id: "cfg",
+    companyName: "PDVTouch Restaurante",
+    cnpj: "00.000.000/0000-00",
+    addressLine1: "Rua Exemplo, 123 - Centro",
+    addressLine2: "Cidade/UF",
+  })
+
+  // Printers
+  await d.printers.bulkPut([
+    { id: "fiscal01", name: "Impressora Fiscal/Cliente", destination: "CLIENTE", profile: "ELGIN" },
+    { id: "cozinha01", name: "Cozinha 01", destination: "COZINHA", profile: "ELGIN" },
+    { id: "bar01", name: "Bar 01", destination: "BAR", profile: "ELGIN" },
+  ])
+
+  // Products
+  await d.products.bulkPut([
+    { id: "p001", name: "Prato Executivo", category: "Pratos", byWeight: false, price: 24.90, active: true, code: "PR001" },
+    { id: "p002", name: "Guarnição do Dia", category: "Pratos", byWeight: false, price: 12.00, active: true, code: "PR002" },
+    { id: "s001", name: "Mousse", category: "Sobremesas", byWeight: false, price: 7.50, active: true, code: "SB001" },
+    { id: "s002", name: "Pudim", category: "Sobremesas", byWeight: false, price: 9.00, active: true, code: "SB002" },
+    { id: "b001", name: "Refrigerante Lata", category: "Bebidas", byWeight: false, price: 8.00, active: true, code: "BD001" },
+    { id: "b002", name: "Suco Natural 300ml", category: "Bebidas", byWeight: false, price: 8.00, active: true, code: "BD002" },
+    { id: "b003", name: "Água 500ml", category: "Bebidas", byWeight: false, price: 5.00, active: true, code: "BD003" },
+    { id: "g001", name: "Self-service por Kg", category: "Por Peso", byWeight: true, price: 0, pricePerKg: 69.90, active: true, code: "KG001" },
+    { id: "g002", name: "Churrasco por Kg", category: "Por Peso", byWeight: true, price: 0, pricePerKg: 89.90, active: true, code: "KG002" },
+  ])
+
+  // Users (semente)
+  await seedUsers(d)
+}
+
+async function seedUsers(d: PDVDB) {
+  const users: Array<{name:string, role:Role, pin:string}> = [
+    { name: "Admin",     role: "ADMIN",   pin: "1111" },
+    { name: "Balança",   role: "BALANCA", pin: "2222" },
+    { name: "Gerente",   role: "GERENTE", pin: "3333" },
+    { name: "Caixa",     role: "CAIXA",   pin: "4444" },
+    { name: "Atendente", role: "ATENDENTE", pin: "5555" },
+  ]
+  await d.users.bulkPut(await Promise.all(users.map(async (u, i) => ({
+    id: `u${i+1}`,
+    name: u.name,
+    role: u.role,
+    active: true,
+    pinHash: await hashPin(u.pin),
+  }))))
+}
+
+// Init idempotente
 export async function initDb() {
-  if (!db.isOpen()) {
-    await db.open()
-  }
-  return db
-}
-
-/**
- * (Dev) Apaga todo o DB e reabre — útil para reset de schema em desenvolvimento
- */
-export async function resetDbHard() {
-  await db.delete()
   await db.open()
+  // Settings/produtos
+  const cfg = await db.settings.get("cfg")
+  if (!cfg) await seedAll(db)
+  // Usuários
+  if (await db.users.count() === 0) await seedUsers(db)
 }
