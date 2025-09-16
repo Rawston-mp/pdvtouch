@@ -1,5 +1,5 @@
 // src/pages/VendaRapida.tsx
-import React, { useEffect, useMemo, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 
 import { listProducts, type Product } from "../db/products"
@@ -14,33 +14,17 @@ import {
   type CartItem,
 } from "../lib/cartStorage"
 import { useSession } from "../auth/session"
+import { listCategories } from "../db/categories"
 
-type Category = "Pratos" | "Bebidas" | "Sobremesas" | "Por Peso"
-const CATEGORIES: { key: Category; label: string }[] = [
-  { key: "Pratos", label: "Pratos" },
-  { key: "Bebidas", label: "Bebidas" },
-  { key: "Sobremesas", label: "Sobremesas" },
-  { key: "Por Peso", label: "Por Peso" },
-]
-
-const num = (v: any, fallback = 0) => {
+const num = (v: number | string | undefined, fallback = 0) => {
   const n = Number(v)
-  return Number.isFinite(n) ? n : fallback
+  return isNaN(n) ? fallback : n
 }
-const fmt = (v: any) => num(v).toFixed(2)
+const fmt = (v: number | string | undefined) => num(v).toFixed(2)
 
 function isByWeight(p: Product): boolean {
-  const u = (p as any)?.unit?.toString()?.toLowerCase?.() || ""
-  const bw = (p as any)?.byWeight === true
-  return bw || u === "kg" || u === "peso" || u === "weight"
-}
-function getCategory(p: Product): Category {
-  const raw = ((p as any)?.category ?? "Pratos").toString()
-  const normalized =
-    raw.toLowerCase() === "bebidas" ? "Bebidas" :
-    raw.toLowerCase() === "sobremesas" ? "Sobremesas" :
-    "Pratos"
-  return normalized as Category
+  const bw = p?.byWeight === true
+  return bw
 }
 
 export default function VendaRapida() {
@@ -53,7 +37,8 @@ export default function VendaRapida() {
 
   // catálogo
   const [catalog, setCatalog] = useState<Product[]>([])
-  const [activeCat, setActiveCat] = useState<Category>("Pratos")
+  const [categories, setCategories] = useState<{ key: string; label: string }[]>([])
+  const [activeCat, setActiveCat] = useState<string>("")
   const [search, setSearch] = useState("")
 
   // campo único (comanda ou código/PLU)
@@ -67,60 +52,6 @@ export default function VendaRapida() {
   // comanda
   const [orderId, setOrderId] = useState<number | null>(null)
   const orderActive = orderId != null
-
-  // boot
-  useEffect(() => {
-    ;(async () => {
-      const prods = await listProducts()
-      setCatalog(prods || [])
-
-      const current = getCurrentOrderId()
-      if (current != null) {
-        setOrderId(current)
-        const loaded = loadCartDraft(current)
-        if (loaded) {
-          setCart(loaded.map((d) => ({ ...d, price: num(d.price), qty: num(d.qty) })))
-        }
-      }
-    })()
-  }, [])
-
-  // persistência POR COMANDA: salva toda vez que carrinho muda
-  useEffect(() => {
-    if (orderActive) saveCartDraft(orderId!, cart)
-  }, [cart, orderActive, orderId])
-
-  // ESC = Próximo cliente somente BALANÇA
-  useEffect(() => {
-    if (role !== "BALANCA" && role !== "BALANÇA") return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault()
-        nextClient()
-      }
-    }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [role, orderId, cart])
-
-  const filtered = useMemo(() => {
-    let base = catalog
-    if (activeCat === "Por Peso") base = base.filter((p) => isByWeight(p))
-    else base = base.filter((p) => getCategory(p) === activeCat && !isByWeight(p))
-
-    if (search.trim()) {
-      const s = search.toLowerCase()
-      base = base.filter(
-        (p: any) => p.name?.toLowerCase?.().includes(s) || p.code?.toLowerCase?.() === s
-      )
-    }
-    return base
-  }, [catalog, activeCat, search])
-
-  const total = useMemo(
-    () => cart.reduce((acc, it) => acc + num(it.price) * num(it.qty), 0),
-    [cart]
-  )
 
   // --------------- Comanda / Código — CAMPO ÚNICO ---------------
   function applyUnified() {
@@ -149,7 +80,7 @@ export default function VendaRapida() {
       alert("Antes de lançar itens por código, informe o Nº da comanda (1–100).")
       return
     }
-    const p = catalog.find((x: any) => x.code && x.code.toLowerCase() === s.toLowerCase())
+    const p = catalog.find((x) => x.code && x.code.toLowerCase() === s.toLowerCase())
     if (!p) {
       alert("Código não encontrado.")
       return
@@ -171,7 +102,7 @@ export default function VendaRapida() {
       alert("Antes de lançar itens, informe a Nº comanda.")
       return
     }
-    const price = num((p as any)?.price)
+    const price = num(p?.price)
     const weight = isByWeight(p)
     const qty = typeof q === "number" ? num(q, 0) : weight ? 0 : 1
 
@@ -190,11 +121,11 @@ export default function VendaRapida() {
         ...c,
         {
           id: p.id,
-          name: (p as any)?.name ?? "Item",
+          name: p?.name ?? "Item",
           unit: weight ? "kg" : "unit",
           price,
           qty,
-          code: (p as any)?.code,
+          code: p?.code,
         },
       ])
     }
@@ -223,14 +154,6 @@ export default function VendaRapida() {
     setCart([])
     setPesoItemId(null)
     setQuickQty("0")
-  }
-  /** Excluir rascunho da comanda (opcional, não usado por padrão). */
-  function deleteDraftPermanently() {
-    if (!orderActive) return
-    if (confirm(`Excluir rascunho da comanda ${orderId}?`)) {
-      removeCartDraft(orderId!)
-      clear()
-    }
   }
 
   // --------------- Keypad ----------------
@@ -273,7 +196,7 @@ export default function VendaRapida() {
   /** Próximo cliente (BALANÇA): salva rascunho da comanda e limpa a UI.
    *  NÃO apaga o rascunho salvo.
    */
-  function nextClient() {
+  const nextClient = useCallback(() => {
     if (!orderActive) return
     saveCartDraft(orderId!, cart) // garante persistência
     // limpa somente a estação da balança
@@ -282,7 +205,68 @@ export default function VendaRapida() {
     setQuickQty("0")
     clearCurrentOrderId()
     setOrderId(null)
-  }
+  }, [orderActive, orderId, cart])
+
+  // boot
+  useEffect(() => {
+    ;(async () => {
+      const prods = await listProducts()
+      setCatalog(prods || [])
+      const cats = await listCategories()
+      const catList = cats.filter(c => c.active).map(c => ({ key: c.name, label: c.name }))
+      // Adiciona padrões se não existirem
+      const defaultCats = ["Pratos", "Bebidas", "Sobremesas", "Por Peso"]
+      defaultCats.forEach(dc => {
+        if (!catList.some(c => c.key === dc)) catList.unshift({ key: dc, label: dc })
+      })
+      setCategories(catList)
+      setActiveCat(catList[0]?.key || "Pratos")
+      const current = getCurrentOrderId()
+      if (current != null) {
+        setOrderId(current)
+        const loaded = loadCartDraft(current)
+        if (loaded) {
+          setCart(loaded.map((d) => ({ ...d, price: num(d.price), qty: num(d.qty) })))
+        }
+      }
+    })()
+  }, [])
+
+  // persistência POR COMANDA: salva toda vez que carrinho muda
+  useEffect(() => {
+    if (orderActive) saveCartDraft(orderId!, cart)
+  }, [cart, orderActive, orderId])
+
+  // ESC = Próximo cliente somente BALANÇA
+  useEffect(() => {
+    if (role !== "BALANCA" && role !== "BALANÇA") return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault()
+        nextClient()
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [role, orderId, cart, nextClient])
+
+  const filtered = useMemo(() => {
+    let base = catalog
+    if (activeCat === "Por Peso") base = base.filter((p) => isByWeight(p))
+    else base = base.filter((p) => (p.category === activeCat))
+    if (search.trim()) {
+      const s = search.toLowerCase()
+      base = base.filter(
+        (p) => p.name?.toLowerCase?.().includes(s) || p.code?.toLowerCase?.() === s
+      )
+    }
+    return base
+  }, [catalog, activeCat, search])
+
+  const total = useMemo(
+    () => cart.reduce((acc, it) => acc + num(it.price) * num(it.qty), 0),
+    [cart]
+  )
 
   // ---------------------- UI ----------------------
   return (
@@ -325,7 +309,7 @@ export default function VendaRapida() {
       {/* Abas */}
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="row" style={{ gap: 8 }}>
-          {CATEGORIES.map((c) => (
+          {categories.map((c) => (
             <button
               key={c.key}
               className={`pill ${activeCat === c.key ? "active" : ""}`}
@@ -349,10 +333,10 @@ export default function VendaRapida() {
           <div className="grid grid-3">
             {filtered.map((p) => {
               const weight = isByWeight(p)
-              const price = num((p as any)?.price)
+              const price = num(p?.price)
               return (
                 <article key={p.id} className="product">
-                  <div className="product-title">{(p as any)?.name ?? "Item"}</div>
+                  <div className="product-title">{p?.name ?? "Item"}</div>
                   <div className="product-price">
                     {weight ? <span>R$ {fmt(price)} / kg</span> : <span>R$ {fmt(price)}</span>}
                   </div>
@@ -506,11 +490,9 @@ export default function VendaRapida() {
           </div>
 
           <div className="row" style={{ gap: 8, marginTop: 8 }}>
-            <button disabled={!orderActive} onClick={() => printText("Cupom (mock)")} className="btn">
+            <button disabled={!orderActive} onClick={() => printText("Cupom (mock)", orderId?.toString() || "")} className="btn">
               Imprimir cupom (mock)
             </button>
-            {/* Opcional: botão para excluir rascunho da comanda */}
-            {/* <button disabled={!orderActive} onClick={deleteDraftPermanently}>Apagar rascunho</button> */}
           </div>
         </aside>
       </div>

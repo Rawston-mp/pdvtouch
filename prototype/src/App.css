@@ -54,11 +54,17 @@
 html, body, #root{ height:100%; }
 body{
   margin:0;
-  background:var(--bg);
+  padding: 0;
+  font-family: 'Inter', Arial, sans-serif;
+  background: #f8f8f8;
   color:var(--text);
-  font-family:var(--font-ui);
   -webkit-font-smoothing:antialiased;
   -moz-osx-font-smoothing:grayscale;
+  min-height: 100vh;
+  box-sizing: border-box;
+  width: 100vw;
+  max-width: 100vw;
+  overflow-x: hidden;
 }
 
 /* ====== Header / navegação ====== */
@@ -75,6 +81,25 @@ body{
 }
 .header .brand{ font-weight:700; letter-spacing:.2px; }
 
+.nav, .nav-inner {
+  background: #000 !important;
+  color: #fff !important;
+}
+.nav a, .nav a:visited {
+  color: #fff !important;
+}
+.nav a.active, .nav a:hover {
+  color: #ffb300 !important;
+  background: rgba(255,255,255,.06) !important;
+}
+.brand {
+  color: #fff !important;
+}
+.session .badge {
+  color: #ffb300 !important;
+  background: rgba(255,255,255,.08) !important;
+}
+
 .nav{ display:flex; gap:12px; flex-wrap:wrap; margin-left:10px; }
 .nav a{
   color:var(--muted); text-decoration:none; padding:6px 10px; border-radius:10px;
@@ -82,6 +107,41 @@ body{
 .nav a.active,.nav a:hover{ color:var(--text); background:rgba(255,255,255,.06); }
 
 .container{ max-width:1400px; margin:12px auto; padding:0 12px 24px; }
+
+@media (max-width: 900px) {
+  body {
+    padding: 0;
+    font-size: 15px;
+  }
+  .container {
+    padding: 8px;
+    max-width: 100vw;
+  }
+  .card {
+    padding: 10px;
+    margin-bottom: 10px;
+  }
+  .grid, .grid-2, .grid-3 {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+}
+
+@media (max-width: 600px) {
+  body {
+    font-size: 14px;
+  }
+  .container {
+    padding: 4px;
+  }
+  .card {
+    padding: 6px;
+  }
+  .row, .col {
+    flex-direction: column !important;
+    gap: 6px !important;
+  }
+}
 
 /* ====== Card / bloco ====== */
 .card{
@@ -238,3 +298,26 @@ a{ color:var(--primary); }
 .row{ display:flex; gap:var(--gap-2); align-items:center; }
 .col{ display:flex; flex-direction:column; gap:var(--gap-2); }
 .spread{ display:flex; align-items:center; justify-content:space-between; gap:var(--gap-2); }
+
+/* ====== Main Area ====== */
+.main-area {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 16px;
+  background: #23243a;
+  min-height: 80vh;
+  border-radius: 16px;
+  box-shadow: 0 2px 16px 0 rgba(0,0,0,0.08);
+  display: flex;
+  flex-direction: row;
+  gap: 24px;
+  transition: background 0.3s;
+}
+@media (max-width: 900px) {
+  .main-area {
+    flex-direction: column;
+    max-width: 98vw;
+    padding: 12px 4vw;
+    gap: 12px;
+  }
+}

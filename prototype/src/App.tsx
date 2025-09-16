@@ -51,7 +51,7 @@ function Layout() {
         </div>
       </div>
 
-      <div style={{ padding: '8px 12px' }}>
+      <div className="main-area" style={{ padding: '8px 12px' }}>
         <Routes>
           <Route path="/" element={<VendaRapida />} />
           <Route path="/venda" element={<VendaRapida />} />

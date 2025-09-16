@@ -1,28 +1,19 @@
-// src/pages/Finalizacao.tsx
 import React, { useEffect, useMemo, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
-
 import { useSession } from "../auth/session"
-import {
-  loadCartDraft,
-  saveCartDraft,
-  removeCartDraft,
-  type CartItem,
-} from "../lib/cartStorage"
+import { loadCartDraft, saveCartDraft, removeCartDraft, type CartItem } from "../lib/cartStorage"
 import { printText } from "../mock/devices"
+import { db } from "../db"
+import type { Order, OrderItem, Payment } from "../db/models"
 
-type DocType = "NAO_FISCAL" | "NFCE" | "SAT" // SAT legado
-
-const toNumber = (v: any, fallback = 0) => {
+const toNumber = (v: unknown, fallback = 0): number => {
   const n = Number(v)
   return Number.isFinite(n) ? n : fallback
 }
-const money = (v: any) => toNumber(v).toFixed(2)
+const money = (v: unknown) => toNumber(v).toFixed(2)
 
-/** Tenta extrair uma comanda de uma leitura de leitor/código */
 function parseOrderFromScan(val: string): number | null {
   if (!val) return null
-  // Normaliza: pega somente dígitos
   const digits = (val.match(/\d+/g) || []).join("")
   if (!digits) return null
   const n = Number(digits)
@@ -31,13 +22,45 @@ function parseOrderFromScan(val: string): number | null {
   return n
 }
 
+type DocType = "NAO_FISCAL" | "NFCE" | "SAT"
+
 export default function Finalizacao() {
   const nav = useNavigate()
-  const { state } = useLocation() as any
-
+  const location = useLocation()
+  const state = (location as { state?: any }).state || {}
   const { user } = useSession()
   const roleRaw = (user?.role ?? "CAIXA") as string
-  const role = roleRaw.normalize("NFD").replace(/\p{Diacritic}/gu, "").toUpperCase() // BALANÇA→BALANCA
+  const role = roleRaw.normalize("NFD").replace(/\p{Diacritic}/gu, "").toUpperCase()
+
+  // Hooks no topo
+  const [orderIdInput, setOrderIdInput] = useState<string>(state?.orderId ? String(state.orderId) : "")
+  const [orderId, setOrderId] = useState<number | null>(state?.orderId ?? null)
+  const [cart, setCart] = useState<CartItem[]>(Array.isArray(state?.cart) ? state.cart : [])
+  const [doc, setDoc] = useState<DocType>("NAO_FISCAL")
+  const [idFiscal, setIdFiscal] = useState<string>("")
+  const [vCash, setVCash] = useState<string>("0")
+  const [vPix, setVPix] = useState<string>("0")
+  const [vTef, setVTef] = useState<string>("0")
+  const [subtotalInfo, setSubtotalInfo] = useState<string>("0")
+  const total = useMemo(() => cart.reduce((acc, it) => acc + toNumber(it.qty) * toNumber(it.price), 0), [cart])
+  const pagos = useMemo(() => toNumber(vCash) + toNumber(vPix) + toNumber(vTef), [vCash, vPix, vTef])
+  const falta = useMemo(() => Math.max(0, total - pagos), [total, pagos])
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "F6") { e.preventDefault(); set100("cash") }
+      if (e.key === "F7") { e.preventDefault(); set100("pix") }
+      if (e.key === "F8") { e.preventDefault(); set100("tef") }
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); confirmar() }
+      if (e.key === "Escape") { e.preventDefault(); nav("/venda") }
+      if (e.key === "F3") { e.preventDefault(); setDoc("NFCE") }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [total, vCash, vPix, vTef, cart, orderId, doc, idFiscal])
+  useEffect(() => {
+    if (orderId != null) saveCartDraft(orderId, cart)
+  }, [cart, orderId])
 
   // Bloqueio: balança não finaliza
   if (role === "BALANCA") {
@@ -55,35 +78,6 @@ export default function Finalizacao() {
     )
   }
 
-  // estado inicial
-  const [orderIdInput, setOrderIdInput] = useState<string>(
-    state?.orderId ? String(state.orderId) : ""
-  )
-  const [orderId, setOrderId] = useState<number | null>(state?.orderId ?? null)
-  const [cart, setCart] = useState<CartItem[]>(
-    Array.isArray(state?.cart) ? state.cart : []
-  )
-
-  const [doc, setDoc] = useState<DocType>("NAO_FISCAL")
-  const [idFiscal, setIdFiscal] = useState<string>("") // CPF/CNPJ opcional
-
-  // pagamentos
-  const [vCash, setVCash] = useState<string>("0")
-  const [vPix, setVPix] = useState<string>("0")
-  const [vTef, setVTef] = useState<string>("0")
-  const [subtotalInfo, setSubtotalInfo] = useState<string>("0")
-
-  // derivados
-  const total = useMemo(
-    () => cart.reduce((acc, it) => acc + toNumber(it.qty) * toNumber(it.price), 0),
-    [cart]
-  )
-  const pagos = useMemo(
-    () => toNumber(vCash) + toNumber(vPix) + toNumber(vTef),
-    [vCash, vPix, vTef]
-  )
-  const falta = useMemo(() => Math.max(0, total - pagos), [total, pagos])
-
   // Carregar por comanda/leitor
   async function loadByOrder() {
     const parsed = parseOrderFromScan(orderIdInput)
@@ -94,43 +88,17 @@ export default function Finalizacao() {
     const draft = loadCartDraft(parsed) || []
     setOrderId(parsed)
     setCart(draft.map((x) => ({ ...x, price: toNumber(x.price), qty: toNumber(x.qty) })))
-    // zera pagamentos ao trocar de comanda
     setVCash("0"); setVPix("0"); setVTef("0")
   }
 
-  // Atalhos
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "F6") { e.preventDefault(); set100("cash") }
-      if (e.key === "F7") { e.preventDefault(); set100("pix") }
-      if (e.key === "F8") { e.preventDefault(); set100("tef") }
-      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); confirmar() }
-      if (e.key === "Escape") { e.preventDefault(); nav("/venda") }
-      if (e.key === "F3") { e.preventDefault(); setDoc("NFCE") }
-    }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [total, vCash, vPix, vTef, cart, orderId, doc, idFiscal])
-
-  // Persistir rascunho quando caixa altera itens
-  useEffect(() => {
-    if (orderId != null) saveCartDraft(orderId, cart)
-  }, [cart, orderId])
-
   // Edição de itens
   const canEditPrice = role === "GERENTE" || role === "ADMIN"
-
   function updateQty(it: CartItem, next: string) {
-    setCart((c) =>
-      c.map((x) => (x.id === it.id ? { ...x, qty: Math.max(0, toNumber(next)) } : x))
-    )
+    setCart((c) => c.map((x) => (x.id === it.id ? { ...x, qty: Math.max(0, toNumber(next)) } : x)))
   }
   function updatePrice(it: CartItem, next: string) {
     if (!canEditPrice) return
-    setCart((c) =>
-      c.map((x) => (x.id === it.id ? { ...x, price: Math.max(0, toNumber(next)) } : x))
-    )
+    setCart((c) => c.map((x) => (x.id === it.id ? { ...x, price: Math.max(0, toNumber(next)) } : x)))
   }
   function removeItem(it: CartItem) {
     setCart((c) => c.filter((x) => x.id !== it.id))
@@ -170,7 +138,40 @@ export default function Finalizacao() {
       return
     }
 
-    // PIX → vai para a tela dedicada
+    // Monta itens do pedido
+    const orderItems: OrderItem[] = cart.map((it) => ({
+      id: it.id,
+      productId: Number(it.code) || 0,
+      name: it.name,
+      qty: it.qty,
+      unitPrice: it.price,
+      total: it.qty * it.price,
+      isWeight: it.unit === "kg",
+    }))
+
+    // Monta pagamentos
+    const payments: Payment[] = []
+    if (toNumber(vCash) > 0) payments.push({ id: "cash", method: "CASH", amount: toNumber(vCash) })
+    if (toNumber(vPix) > 0) payments.push({ id: "pix", method: "PIX", amount: toNumber(vPix) })
+    if (toNumber(vTef) > 0) payments.push({ id: "tef", method: "TEF", amount: toNumber(vTef) })
+
+    // Monta pedido
+    const order: Order = {
+      id: `COMANDA-${orderId}`,
+      createdAt: Date.now(),
+      status: "PAID",
+      items: orderItems,
+      payments,
+      total,
+      receiptMode: doc === "NAO_FISCAL" ? "NAO_FISCAL" : doc === "NFCE" ? "FISCAL_NFCE" : "FISCAL_SAT",
+      customerIdType: idFiscal.length === 11 ? "CPF" : idFiscal.length === 14 ? "CNPJ" : "NONE",
+      customerTaxId: idFiscal || null,
+    }
+
+    // Salva pedido no banco
+    await db.orders.add(order)
+
+    // PIX → vai para a tela dedicada (salva antes de redirecionar)
     if (toNumber(vPix) > 0) {
       nav("/pix", {
         state: {
@@ -182,11 +183,13 @@ export default function Finalizacao() {
           idFiscal,
         },
       })
+      removeCartDraft(orderId)
       return
     }
 
     // Mock NFC-e/SAT: imprime e encerra
     await printText(
+      "mock",
       `[MOCK] Confirmação: R$ ${money(total)} | CASH ${money(vCash)} | TEF ${money(vTef)} | DOC ${doc}${idFiscal ? " (" + idFiscal + ")" : ""}`
     )
     removeCartDraft(orderId)
@@ -194,10 +197,10 @@ export default function Finalizacao() {
     nav("/relatorioxz")
   }
 
+  // JSX principal
   return (
     <div className="container">
       <h2>Finalização</h2>
-
       {/* Campo único: Nº comanda / leitor */}
       {!orderId && (
         <div className="card" style={{ marginBottom: 16 }}>
@@ -222,7 +225,6 @@ export default function Finalizacao() {
           </p>
         </div>
       )}
-
       {orderId != null && (
         <>
           <div className="pill small">
@@ -232,7 +234,6 @@ export default function Finalizacao() {
           <div className="card" style={{ marginTop: 12 }}>
             <h3 className="card-title">Itens</h3>
             {!cart.length && <div className="muted">Nenhum item na comanda.</div>}
-
             {!!cart.length && (
               <table className="table">
                 <thead>
@@ -263,11 +264,7 @@ export default function Finalizacao() {
                           className="input-sm"
                           style={{ width: 90, textAlign: "right" }}
                           disabled={!canEditPrice}
-                          title={
-                            canEditPrice
-                              ? "Editar preço (gerente/admin)"
-                              : "Somente gerente/admin podem editar preço"
-                          }
+                          title={canEditPrice ? "Editar preço (gerente/admin)" : "Somente gerente/admin podem editar preço"}
                         />
                       </td>
                       <td>R$ {money(toNumber(it.qty) * toNumber(it.price))}</td>

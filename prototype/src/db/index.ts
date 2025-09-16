@@ -1,5 +1,6 @@
 // src/db/index.ts
 import Dexie, { Table } from "dexie"
+import type { Order } from "./models"
 
 // Tipos base
 export type Destination = "CLIENTE" | "COZINHA" | "BAR"
@@ -42,19 +43,29 @@ export type User = {
 }
 
 // DB
+export type Category = {
+  id: string
+  name: string
+  active: boolean
+}
+
 class PDVDB extends Dexie {
   settings!: Table<Settings, string>
   printers!: Table<Printer, string>
   products!: Table<Product, string>
   users!: Table<User, string>
+  categories!: Table<Category, string>
+  orders!: Table<Order, string> // Store de pedidos tipada
 
   constructor() {
     super("pdvtouch-proto")
-    this.version(2).stores({
+    this.version(4).stores({
       settings: "id",
       printers: "id",
       products: "id, code, category, byWeight",
-      users: "id, role, active"
+      users: "id, role, active",
+      categories: "id, name, active",
+      orders: "id, createdAt, status" // Nova store
     })
     this.on("populate", async () => {
       await seedAll(this)
