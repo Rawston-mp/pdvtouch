@@ -3,7 +3,8 @@
    =========================== */
 
 @media (max-width: 1024px) {
-  .navbar, .header-inner {
+  .navbar,
+  .header-inner {
     padding: 18px 12px;
     height: 64px;
     min-height: 56px;
