@@ -1,3 +1,10 @@
+## Como acessar o sistema
+
+Após iniciar o ambiente de desenvolvimento, acesse o sistema pelo navegador em:
+
+  http://localhost:5173
+
+Essa é a porta padrão do Vite configurada no projeto. Se acessar outra porta, o sistema pode não funcionar corretamente.
 # Dev Container (PDVTouch)
 
 Este repositório suporta **Dev Containers** para um ambiente padronizado com **Node 20** e **.NET 8**.
