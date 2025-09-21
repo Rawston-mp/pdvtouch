@@ -186,8 +186,8 @@ button:disabled{ opacity:.6; cursor:not-allowed; }
 /* ====== Keypad ====== */
 .keypad { display:grid; grid-template-columns:repeat(3,1fr); gap:var(--gap-2); }
 .keypad button{
-  height:58px;
-  font-size:20px;             /* números maiores */
+  height:40px;
+  font-size:15px;             /* números maiores */
   font-weight:800;            /* alto contraste */
   color:var(--text);          /* força cor do texto */
   border:1px solid rgba(255,255,255,.12);
