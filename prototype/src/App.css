@@ -4,7 +4,7 @@
 
 :root {
   /* Dark “claro”: fundos suaves, alto contraste no texto */
-  --bg: #363a6d;          /* fundo geral */
+  --bg: #332603;          /* fundo geral */
   --surface: #161b25;     /* cartões / painéis */
   --surface-2: #1b2130;   /* inputs / botões neutros */
   --text: #ee780a;        /* texto principal */
@@ -12,7 +12,7 @@
 
   /* Primário AZUL (produtos, CTAs) */
   --primary: #4e90ff;
-  --primary-600: #3a7cf0;
+  --primary-500: #3a7cf0;
   --primary-700: #2e69da;
 
   --success: #16a34a;
