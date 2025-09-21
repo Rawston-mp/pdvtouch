@@ -1,7 +1,7 @@
 // src/App.tsx
 import { NavLink, Routes, Route } from 'react-router-dom'
 import { SessionProvider, useSession } from './auth/session'
-import { RequireRole } from './utils/guard.tsx'
+import { RequireRole } from './utils/guard'
 import LoginPin from './components/LoginPin'
 
 import VendaRapida from './pages/VendaRapida'
@@ -15,7 +15,7 @@ import Admin from './pages/Admin'
 import AdminUsuarios from './pages/AdminUsuarios'
 import Configuracoes from './pages/Configuracoes'
 import AdminProdutos from './pages/AdminProdutos'
-import PixPage from './pages/Pix'          // <<<<<< NOVO
+import PixPage from './pages/Pix' // <<<<<< NOVO
 
 import './App.css'
 
@@ -23,7 +23,11 @@ function Layout() {
   const { user, signOut } = useSession()
 
   function sair() {
-    try { signOut() } catch {}
+    try {
+      signOut()
+    } catch (e) {
+      /* erro ao sair */
+    }
     window.location.href = '/'
   }
 
@@ -34,20 +38,38 @@ function Layout() {
       <div style={topbar}>
         <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
           <b>PDVTouch (Protótipo)</b>
-          <NavLink to="/venda" className={linkCls}>Venda</NavLink>
-          <NavLink to="/finalizacao" className={linkCls}>Finalização</NavLink>
-          <NavLink to="/impressao" className={linkCls}>Impressão</NavLink>
-          <NavLink to="/relatorios" className={linkCls}>Relatórios</NavLink>
-          <NavLink to="/relatorioxz" className={linkCls}>Relatório X/Z</NavLink>
-          <NavLink to="/turno" className={linkCls}>Turno</NavLink>
-          <NavLink to="/sync" className={linkCls}>Sync</NavLink>
-          <NavLink to="/admin" className={linkCls}>Admin</NavLink>
+          <NavLink to="/venda" className={linkCls}>
+            Venda
+          </NavLink>
+          <NavLink to="/finalizacao" className={linkCls}>
+            Finalização
+          </NavLink>
+          <NavLink to="/impressao" className={linkCls}>
+            Impressão
+          </NavLink>
+          <NavLink to="/relatorios" className={linkCls}>
+            Relatórios
+          </NavLink>
+          <NavLink to="/relatorioxz" className={linkCls}>
+            Relatório X/Z
+          </NavLink>
+          <NavLink to="/turno" className={linkCls}>
+            Turno
+          </NavLink>
+          <NavLink to="/sync" className={linkCls}>
+            Sync
+          </NavLink>
+          <NavLink to="/admin" className={linkCls}>
+            Admin
+          </NavLink>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <small style={{ opacity: .7 }}>
+          <small style={{ opacity: 0.7 }}>
             {user ? `${user.name} — ${user.role}` : 'Sem sessão'}
           </small>
-          <button onClick={sair} style={{ padding: '4px 10px' }}>Sair</button>
+          <button onClick={sair} style={{ padding: '4px 10px' }}>
+            Sair
+          </button>
         </div>
       </div>
 
