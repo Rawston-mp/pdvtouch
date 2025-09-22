@@ -21,10 +21,16 @@ jobs:
           cache: "npm"
 
       - name: Instalar dependências
-        run: npm ci
+        run: |
+          cd prototype
+          npm ci
 
       - name: Build do projeto
-        run: npm run build --if-present
+        run: |
+          cd prototype
+          npm run build --if-present
 
       - name: Rodar testes
-        run: npm test --if-present
+        run: |
+          cd prototype
+          npm test --if-present
