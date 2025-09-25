@@ -1,7 +1,0 @@
-{
-  "products": [
-    { "id": 1, "name": "Prato Executivo", "price": 24.9 },
-    { "id": 2, "name": "Suco Natural", "price": 8.0 }
-  ],
-  "orders": []
-}
