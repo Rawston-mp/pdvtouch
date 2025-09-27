@@ -58,13 +58,22 @@ export function listDraftOrders(): number[] {
 /** Guarda a comanda "ativa" nesta estação. */
 export function setCurrentOrderId(orderId: number): void {
   if (!Number.isFinite(orderId)) return
+  if (orderId < 1 || orderId > 200) {
+    // ignora valores fora do intervalo válido
+    try { localStorage.removeItem(CURRENT_KEY) } catch {}
+    return
+  }
   localStorage.setItem(CURRENT_KEY, String(orderId))
 }
 
 export function getCurrentOrderId(): number | null {
   const raw = localStorage.getItem(CURRENT_KEY)
   const n = Number(raw)
-  return Number.isFinite(n) ? n : null
+  if (!Number.isFinite(n) || n < 1 || n > 200) {
+    try { localStorage.removeItem(CURRENT_KEY) } catch {}
+    return null
+  }
+  return n
 }
 
 export function clearCurrentOrderId(): void {

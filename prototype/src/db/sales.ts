@@ -1,11 +1,26 @@
 // src/db/sales.ts
-import { db, type Sale, type ShiftSummary } from './index'
+import { db, ensureDbOpen, type Sale, type ShiftSummary } from './index'
 import { listDraftOrders, removeCartDraft, clearCurrentOrderId } from '../lib/cartStorage'
 import type { CartItem } from '../lib/cartStorage'
 
 // Funções para gerenciar vendas
 export async function addSale(sale: Omit<Sale, 'id'>): Promise<number> {
-  return await db.sales.add(sale)
+  await ensureDbOpen()
+  try {
+    return await db.sales.add(sale)
+  } catch (err: any) {
+    // Erros comuns do IndexedDB/Dexie
+    if (err?.name === 'ConstraintError') {
+      throw new Error('Falha ao salvar venda: violação de chave/índice. Tente novamente.')
+    }
+    if (err?.name === 'QuotaExceededError') {
+      throw new Error('Espaço de armazenamento esgotado no navegador. Limpe dados antigos em Configurações > Limpar dados locais.')
+    }
+    if (err?.name === 'InvalidStateError') {
+      throw new Error('Banco de dados não está pronto. Recarregue a página e tente novamente.')
+    }
+    throw err
+  }
 }
 
 export async function listSales(startDate?: Date, endDate?: Date): Promise<Sale[]> {

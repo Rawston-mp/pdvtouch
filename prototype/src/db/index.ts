@@ -101,6 +101,22 @@ class PDVDB extends Dexie {
 }
 export const db = new PDVDB()
 
+// Garante que o banco esteja aberto antes de operações de escrita/leitura críticas
+export async function ensureDbOpen() {
+  try {
+    if (!db.isOpen()) {
+      await db.open()
+    }
+  } catch (err) {
+    // Repassa com mensagem mais clara
+    const e = err as any
+    if (e?.name === 'UpgradeBlockedError') {
+      throw new Error('Atualização do banco bloqueada. Feche outras abas/janelas do app e recarregue.')
+    }
+    throw err
+  }
+}
+
 // Util: hash de PIN (SHA-256 → hex)
 export async function hashPin(pin: string): Promise<string> {
   const enc = new TextEncoder().encode(pin)

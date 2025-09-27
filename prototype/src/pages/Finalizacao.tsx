@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import { useSession } from '../auth/session'
-import { loadCartDraft, saveCartDraft, removeCartDraft, type CartItem } from '../lib/cartStorage'
+import { loadCartDraft, saveCartDraft, removeCartDraft, clearCurrentOrderId, type CartItem } from '../lib/cartStorage'
 import { printText } from '../mock/devices'
 import { addSale } from '../db/sales'
 
@@ -114,7 +114,8 @@ export default function Finalizacao() {
         e.preventDefault()
         set100('tef')
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      const isEnter = e.key === 'Enter' || (e as any).code === 'Enter' || (e as any).code === 'NumpadEnter'
+      if ((e.ctrlKey || e.metaKey) && isEnter) {
         e.preventDefault()
         confirmar()
       }
@@ -197,6 +198,8 @@ export default function Finalizacao() {
           from: 'finalizacao',
           doc,
           idFiscal,
+          cash: toNumber(vCash),
+          tef: toNumber(vTef),
         },
       })
       return
@@ -227,18 +230,28 @@ export default function Finalizacao() {
         `[MOCK] Confirmação: R$ ${money(total)} | CASH ${money(vCash)} | TEF ${money(vTef)} | DOC ${doc}${idFiscal ? ' (' + idFiscal + ')' : ''}`
       )
       
-      removeCartDraft(orderId)
+  removeCartDraft(orderId)
+  try { clearCurrentOrderId() } catch {}
       alert('Pagamento confirmado! Comanda encerrada e registrada no sistema.')
       nav('/relatorioxz')
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao salvar venda:', error)
-      alert('Erro ao registrar venda. Tente novamente.')
+      const msg = error?.message || 'Erro ao registrar venda. Tente novamente.'
+      alert(msg)
       return
     }
   }
 
+  const handleKeyDown: React.KeyboardEventHandler<HTMLDivElement> = (e) => {
+    const isEnter = e.key === 'Enter' || (e as any).code === 'Enter' || (e as any).code === 'NumpadEnter'
+    if ((e.ctrlKey || (e as any).metaKey) && isEnter) {
+      e.preventDefault()
+      confirmar()
+    }
+  }
+
   return (
-    <div className="container">
+    <div className="container" onKeyDown={handleKeyDown}>
       <h2>Finalização</h2>
 
       {/* Campo único: Nº comanda / leitor */}
@@ -446,6 +459,9 @@ export default function Finalizacao() {
               Confirmar pagamento (Ctrl+Enter)
             </button>
           </div>
+          <p className="muted small" style={{ marginTop: 4 }}>
+            Dica: atalho de teclado — Ctrl+Enter (Windows/Linux) ou ⌘+Enter (macOS) para confirmar.
+          </p>
         </>
       )}
     </div>

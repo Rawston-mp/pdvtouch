@@ -1,5 +1,6 @@
 // src/utils/guard.tsx
 import { useSession } from '../auth/session'
+import type { ReactNode } from 'react'
 import type { UserRole } from '../db/models'
 
 type Props = {
@@ -7,7 +8,7 @@ type Props = {
   roles?: UserRole[]
   /** Mensagem customizada para usuários bloqueados */
   blockMessage?: string
-  children: JSX.Element
+  children: ReactNode
 }
 
 /** Guard simples por perfil. */

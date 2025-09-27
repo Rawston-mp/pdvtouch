@@ -78,12 +78,15 @@ export default function VendaRapida() {
       setCatalog(prods || [])
 
       const current = getCurrentOrderId()
-      if (current != null) {
+      if (current != null && current >= 1 && current <= 200) {
         setOrderId(current)
         const loaded = loadCartDraft(current)
         if (loaded) {
           setCart(loaded.map((d) => ({ ...d, price: num(d.price), qty: num(d.qty) })))
         }
+      } else if (current != null) {
+        // valor inválido (ex.: 0) encontrado no storage — limpa
+        clearCurrentOrderId()
       }
     })()
   }, [])

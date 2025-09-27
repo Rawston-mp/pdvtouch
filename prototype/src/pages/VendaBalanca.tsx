@@ -1,6 +1,7 @@
 // src/pages/VendaBalanca.tsx
 import { useEffect, useMemo, useState } from 'react'
 import { db } from '../db'
+import { saveCartDraft } from '../lib/cartStorage'
 import type { Order, OrderItem } from '../db/models'
 
 export default function VendaBalanca() {
@@ -62,16 +63,17 @@ export default function VendaBalanca() {
     if (!comandaOk) return alert('Informe o nº da comanda (1–200).')
     if (items.length === 0) return alert('Nenhum item lançado.')
 
-    const orderId = 'COMANDA-' + Number(comanda).toString().padStart(3, '0')
-    const order: Order = {
-      id: orderId,
-      createdAt: Date.now(),
-      status: 'OPEN', // aguardará pagamento no caixa
-      items,
-      payments: [],
-      total,
-    }
-    await db.orders.put(order)
+    // Salva rascunho da comanda no localStorage (compatível com outras telas)
+    const orderNum = Number(comanda)
+    const draftItems = items.map((i) => ({
+      id: i.id,
+      name: i.name,
+      unit: i.isWeight ? 'kg' as const : 'unit' as const,
+      price: i.unitPrice,
+      qty: i.isWeight ? Number(i.qty) : 1,
+      code: undefined,
+    }))
+    saveCartDraft(orderNum, draftItems)
 
     // limpa para o próximo cliente
     setItems([])

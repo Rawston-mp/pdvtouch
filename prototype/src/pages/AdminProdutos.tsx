@@ -201,6 +201,39 @@ export default function AdminProdutos() {
     download(`produtos_${stamp}.csv`, csv)
   }
 
+  function handleDownloadModelCSV() {
+    const head = ['id', 'name', 'category', 'byWeight', 'price', 'pricePerKg', 'code', 'active']
+    download('modelo_produtos.csv', head.join(','))
+  }
+
+  function handleDownloadSampleCSV() {
+    const cols = ['id', 'name', 'category', 'byWeight', 'price', 'pricePerKg', 'code', 'active']
+    const rows = [
+      {
+        id: 'p_demo_1',
+        name: 'Exemplo Unitário',
+        category: 'Pratos',
+        byWeight: 'false',
+        price: '24,90',
+        pricePerKg: '0',
+        code: 'EX001',
+        active: 'true',
+      },
+      {
+        id: 'p_demo_2',
+        name: 'Exemplo Por Kg',
+        category: 'Por Peso',
+        byWeight: 'true',
+        price: '0',
+        pricePerKg: '69,90',
+        code: 'EXKG1',
+        active: 'true',
+      },
+    ]
+    const csv = toCSV(rows as any, cols)
+    download('exemplo_produtos.csv', csv)
+  }
+
   const parseBool = (v: any): boolean => {
     if (typeof v === 'boolean') return v
     if (typeof v === 'number') return v !== 0
@@ -336,6 +369,12 @@ export default function AdminProdutos() {
         <div className="row" style={{ justifyContent: 'space-between', marginBottom: 8, gap: 8, flexWrap: 'wrap' }}>
           <h3 className="card-title">Produtos</h3>
           <div className="row" style={{ gap: 8 }}>
+            <button className="btn" onClick={handleDownloadModelCSV}>
+              Baixar modelo CSV
+            </button>
+            <button className="btn" onClick={handleDownloadSampleCSV}>
+              Baixar exemplo CSV
+            </button>
             <button className="btn" onClick={handleExportCSV} disabled={loading}>
               Exportar CSV
             </button>

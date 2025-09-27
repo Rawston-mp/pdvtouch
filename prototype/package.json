@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --host",
     "mock:ws": "node mock/ws-server.mjs",
-    "dev:all": "concurrently -n WEB,WS -c auto \"npm run dev\" \"npm run mock:ws\""
+    "dev:all": "concurrently -n WEB,WS -c auto \"npm run dev\" \"npm run mock:ws\"",
+    "type-check": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "dexie": "^4.2.0",

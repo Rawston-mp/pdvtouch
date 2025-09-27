@@ -17,8 +17,10 @@ import AdminUsuarios from './pages/AdminUsuarios'
 import Configuracoes from './pages/Configuracoes'
 import AdminProdutos from './pages/AdminProdutos'
 import PixPage from './pages/Pix' // <<<<<< NOVO
+import Sobre from './pages/Sobre'
 
 import './App.css'
+import { connectDevices, reconnectDevices } from './mock/devices'
 
 function Layout() {
   const { user, signOut } = useSession()
@@ -89,7 +91,13 @@ function Layout() {
               Admin
             </NavLink>
           )}
+
+          {/* Sobre/Suporte: disponível para todos */}
+          <NavLink to="/sobre" className={linkCls}>
+            Sobre
+          </NavLink>
         </div>
+        <WsStatus />
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <small style={{ opacity: 0.7 }}>
             {user ? `${user.name} — ${user.role}` : 'Sem sessão'}
@@ -168,6 +176,9 @@ function Layout() {
             }
           />
 
+          {/* Sobre/Suporte: disponível para todos */}
+          <Route path="/sobre" element={<Sobre />} />
+
           {/* PIX: permitido CAIXA, GERENTE, ADMIN */}
           <Route
             path="/pix"
@@ -212,6 +223,7 @@ function Layout() {
           />
 
           <Route path="*" element={<VendaRapida />} />
+          <Route path="/sobre" element={<Sobre />} />
         </Routes>
       </div>
     </div>
@@ -223,6 +235,53 @@ export default function App() {
     <SessionProvider>
       <Layout />
     </SessionProvider>
+  )
+}
+
+function WsStatus() {
+  const [status, setStatus] = React.useState<'open' | 'connecting' | 'closed'>('connecting')
+
+  React.useEffect(() => {
+    const ws = connectDevices()
+
+    function update() {
+      const s = ws?.readyState
+      if (s === WebSocket.OPEN) setStatus('open')
+      else if (s === WebSocket.CONNECTING) setStatus('connecting')
+      else setStatus('closed')
+    }
+    update()
+    const id = setInterval(update, 1000)
+
+    const onOpen = () => setStatus('open')
+    const onClose = () => setStatus('closed')
+    const onError = () => setStatus('closed')
+    ws?.addEventListener('open', onOpen)
+    ws?.addEventListener('close', onClose)
+    ws?.addEventListener('error', onError)
+
+    return () => {
+      clearInterval(id)
+      ws?.removeEventListener('open', onOpen)
+      ws?.removeEventListener('close', onClose)
+      ws?.removeEventListener('error', onError)
+    }
+  }, [])
+
+  const color = status === 'open' ? '#16a34a' : status === 'connecting' ? '#f59e0b' : '#dc2626'
+  const label = status === 'open' ? 'WS conectado' : status === 'connecting' ? 'WS conectando' : 'WS offline'
+  const showReconnect = status !== 'open'
+
+  return (
+    <div title={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <span style={{ width: 8, height: 8, borderRadius: 8, background: color, display: 'inline-block' }} />
+      <small style={{ opacity: 0.7 }}>{label}</small>
+      {showReconnect && (
+        <button onClick={() => reconnectDevices()} style={{ marginLeft: 6, padding: '2px 8px' }}>
+          Reconectar
+        </button>
+      )}
+    </div>
   )
 }
 
