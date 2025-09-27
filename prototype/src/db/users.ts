@@ -32,7 +32,36 @@ export async function deleteUser(id: string) {
 }
 
 export async function findByPin(pin: string): Promise<User | undefined> {
-  const h = await hashPin(pin)
-  const all = await db.users.toArray()
-  return all.find(u => u.active && u.pinHash === h)
+  console.log(`🔍 [DEBUG] Buscando usuário com PIN: "${pin}"`)
+  
+  try {
+    const h = await hashPin(pin)
+    console.log(`🔐 [DEBUG] Hash gerado para "${pin}": ${h}`)
+    
+    const all = await db.users.toArray()
+    console.log(`👥 [DEBUG] Total de usuários no banco: ${all.length}`)
+    
+    if (all.length === 0) {
+      console.warn('⚠️ [DEBUG] Nenhum usuário encontrado no banco!')
+      return undefined
+    }
+    
+    all.forEach((u, index) => {
+      const hashMatch = u.pinHash === h
+      console.log(`   [${index + 1}] ${u.name} (${u.role}):`)
+      console.log(`       Ativo: ${u.active}`)
+      console.log(`       Hash armazenado: ${u.pinHash}`)
+      console.log(`       Hash calculado: ${h}`)
+      console.log(`       Hashes coincidem: ${hashMatch}`)
+      console.log(`       Resultado: ${u.active && hashMatch ? '✅ MATCH' : '❌ NO MATCH'}`)
+    })
+    
+    const found = all.find(u => u.active && u.pinHash === h)
+    console.log(`🎯 [DEBUG] Usuário encontrado: ${found ? `✅ ${found.name}` : '❌ nenhum'}`)
+    
+    return found
+  } catch (error) {
+    console.error('❌ [DEBUG] Erro na busca por PIN:', error)
+    return undefined
+  }
 }

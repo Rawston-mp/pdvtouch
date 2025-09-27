@@ -127,10 +127,10 @@ export default function VendaRapida() {
     const s = unifiedInput.trim()
     if (!s) return
 
-    // só dígitos -> comanda 1..100
+    // só dígitos -> comanda 1..200
     if (/^\d+$/.test(s)) {
       const n = num(s, NaN)
-      if (Number.isFinite(n) && n >= 1 && n <= 100) {
+      if (Number.isFinite(n) && n >= 1 && n <= 200) {
         setOrderId(n)
         setCurrentOrderId(n)
 
@@ -146,7 +146,7 @@ export default function VendaRapida() {
 
     // se não foi comanda, trata como código/PLU (exige comanda ativa)
     if (!orderActive) {
-      alert("Antes de lançar itens por código, informe o Nº da comanda (1–100).")
+      alert("Antes de lançar itens por código, informe o Nº da comanda (1–200).")
       return
     }
     const p = catalog.find((x: any) => x.code && x.code.toLowerCase() === s.toLowerCase())
@@ -285,13 +285,37 @@ export default function VendaRapida() {
   }
 
   // ---------------------- UI ----------------------
+  const isBalanca = user?.role === 'BALANÇA A' || user?.role === 'BALANÇA B'
+  
   return (
     <div className="container">
+      {/* Aviso especial para balanças */}
+      {isBalanca && (
+        <div style={{ 
+          marginBottom: 16, 
+          padding: 12, 
+          backgroundColor: '#e3f2fd', 
+          border: '1px solid #2196f3', 
+          borderRadius: 4,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12
+        }}>
+          <span style={{ fontSize: '24px' }}>⚖️</span>
+          <div>
+            <strong>Modo Balança ({user.role})</strong>
+            <p style={{ margin: '4px 0 0 0', fontSize: '14px', opacity: 0.8 }}>
+              1. Informe o número da comanda (1-200) • 2. Adicione produtos por peso • 3. A finalização será feita no caixa
+            </p>
+          </div>
+        </div>
+      )}
+      
       {/* Campo único de comanda/PLU */}
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="row" style={{ gap: 12, alignItems: "end", flexWrap: "wrap" }}>
           <div className="col" style={{ minWidth: 320 }}>
-            <label className="small muted">Comanda (1–100) ou Código/PLU</label>
+            <label className="small muted">Comanda (1–200) ou Código/PLU</label>
             <div className="row" style={{ gap: 8 }}>
               <input
                 value={unifiedInput}

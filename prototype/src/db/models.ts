@@ -2,14 +2,14 @@
 
 export type PaymentMethod = 'CASH' | 'PIX' | 'TEF'
 
-export type ReceiptMode = 'NAO_FISCAL' | 'FISCAL_NFCE' | 'FISCAL_SAT'
+export type ReceiptMode = 'NAO_FISCAL' | 'FISCAL_NFCE'
 export type CustomerIdType = 'NONE' | 'CPF' | 'CNPJ'
 
-export type UserRole = 'ADMIN' | 'GERENTE' | 'CAIXA' | 'BALANÇA' | 'ATENDENTE'
+export type UserRole = 'ADMIN' | 'GERENTE' | 'CAIXA' | 'BALANÇA A' | 'BALANÇA B' | 'ATENDENTE'
 
 export type Category = 'Pratos' | 'Bebidas' | 'Sobremesas' | 'Por Peso'
 
-export type PrintRoute = 'CAIXA' | 'COZINHA' | 'BAR' | 'SOBREMESA'
+export type PrintRoute = 'CAIXA' | 'COZINHA' | 'BAR'
 
 export interface Product {
   id?: number

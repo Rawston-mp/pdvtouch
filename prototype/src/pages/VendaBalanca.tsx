@@ -9,7 +9,7 @@ export default function VendaBalanca() {
 
   const comandaOk = useMemo(() => {
     const n = Number(comanda)
-    return !!comanda && Number.isFinite(n) && n >= 1 && n <= 100
+    return !!comanda && Number.isFinite(n) && n >= 1 && n <= 200
   }, [comanda])
 
   useEffect(() => {
@@ -59,7 +59,7 @@ export default function VendaBalanca() {
   const total = useMemo(() => items.reduce((s, i) => s + i.total, 0), [items])
 
   async function proximoCliente() {
-    if (!comandaOk) return alert('Informe o nº da comanda (1–100).')
+    if (!comandaOk) return alert('Informe o nº da comanda (1–200).')
     if (items.length === 0) return alert('Nenhum item lançado.')
 
     const orderId = 'COMANDA-' + Number(comanda).toString().padStart(3, '0')
@@ -83,7 +83,7 @@ export default function VendaBalanca() {
       <h2>Balança — Registrar Comanda</h2>
 
       <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 8, alignItems: 'center', maxWidth: 520 }}>
-        <label>Nº Comanda (1–100)</label>
+        <label>Nº Comanda (1–200)</label>
         <input
           type="text"
           value={comanda}

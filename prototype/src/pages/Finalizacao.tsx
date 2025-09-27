@@ -11,7 +11,7 @@ import {
 } from "../lib/cartStorage"
 import { printText } from "../mock/devices"
 
-type DocType = "NAO_FISCAL" | "NFCE" | "SAT" // SAT legado
+type DocType = "NAO_FISCAL" | "NFCE"
 
 const toNumber = (v: any, fallback = 0) => {
   const n = Number(v)
@@ -27,7 +27,7 @@ function parseOrderFromScan(val: string): number | null {
   if (!digits) return null
   const n = Number(digits)
   if (!Number.isFinite(n)) return null
-  if (n < 1 || n > 100) return null
+  if (n < 1 || n > 200) return null
   return n
 }
 
@@ -88,7 +88,7 @@ export default function Finalizacao() {
   async function loadByOrder() {
     const parsed = parseOrderFromScan(orderIdInput)
     if (parsed == null) {
-      alert("Informe/escaneie um Nº de comanda válido (1–100).")
+      alert("Informe/escaneie um Nº de comanda válido (1–200).")
       return
     }
     const draft = loadCartDraft(parsed) || []
@@ -185,7 +185,7 @@ export default function Finalizacao() {
       return
     }
 
-    // Mock NFC-e/SAT: imprime e encerra
+    // Mock NFC-e: imprime e encerra
     await printText(
       `[MOCK] Confirmação: R$ ${money(total)} | CASH ${money(vCash)} | TEF ${money(vTef)} | DOC ${doc}${idFiscal ? " (" + idFiscal + ")" : ""}`
     )
@@ -304,12 +304,6 @@ export default function Finalizacao() {
                 title="F3"
               >
                 Fiscal (NFC-e)
-              </button>
-              <button
-                className={`pill ${doc === "SAT" ? "active" : ""}`}
-                onClick={() => setDoc("SAT")}
-              >
-                Fiscal (SAT — legado)
               </button>
             </div>
             <div className="row" style={{ gap: 8 }}>

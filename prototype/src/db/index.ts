@@ -31,7 +31,7 @@ export type Product = {
   active: boolean
 }
 
-export type Role = "ADMIN" | "BALANCA" | "GERENTE" | "CAIXA" | "ATENDENTE"
+export type Role = "ADMIN" | "BALANÇA A" | "BALANÇA B" | "GERENTE" | "CAIXA" | "ATENDENTE"
 
 export type User = {
   id: string
@@ -50,7 +50,7 @@ class PDVDB extends Dexie {
 
   constructor() {
     super("pdvtouch-proto")
-    this.version(2).stores({
+    this.version(3).stores({
       settings: "id",
       printers: "id",
       products: "id, code, category, byWeight",
@@ -101,17 +101,17 @@ async function seedAll(d: PDVDB) {
     { id: "g002", name: "Churrasco por Kg", category: "Por Peso", byWeight: true, price: 0, pricePerKg: 89.90, active: true, code: "KG002" },
   ])
 
-  // Users (semente)
-  await seedUsers(d)
+  // Users serão criados separadamente pelo initDb
 }
 
 async function seedUsers(d: PDVDB) {
   const users: Array<{name:string, role:Role, pin:string}> = [
-    { name: "Admin",     role: "ADMIN",   pin: "1111" },
-    { name: "Balança",   role: "BALANCA", pin: "2222" },
-    { name: "Gerente",   role: "GERENTE", pin: "3333" },
-    { name: "Caixa",     role: "CAIXA",   pin: "4444" },
-    { name: "Atendente", role: "ATENDENTE", pin: "5555" },
+    { name: "Admin",     role: "ADMIN",      pin: "1111" },
+    { name: "Balança A", role: "BALANÇA A",  pin: "2222" },
+    { name: "Balança B", role: "BALANÇA B",  pin: "2233" },
+    { name: "Gerente",   role: "GERENTE",    pin: "3333" },
+    { name: "Caixa",     role: "CAIXA",      pin: "4444" },
+    { name: "Atendente", role: "ATENDENTE",  pin: "5555" },
   ]
   await d.users.bulkPut(await Promise.all(users.map(async (u, i) => ({
     id: `u${i+1}`,
@@ -125,9 +125,18 @@ async function seedUsers(d: PDVDB) {
 // Init idempotente
 export async function initDb() {
   await db.open()
-  // Settings/produtos
+  
+  // Verifica se já foi inicializado
   const cfg = await db.settings.get("cfg")
-  if (!cfg) await seedAll(db)
-  // Usuários
-  if (await db.users.count() === 0) await seedUsers(db)
+  const userCount = await db.users.count()
+  
+  if (!cfg) {
+    console.log('🔄 Inicializando banco de dados pela primeira vez...')
+    await seedAll(db)
+  } else if (userCount === 0) {
+    console.log('🔄 Criando usuários padrão...')
+    await seedUsers(db)
+  }
+  
+  console.log(`✅ Banco inicializado. Usuários: ${await db.users.count()}`)
 }

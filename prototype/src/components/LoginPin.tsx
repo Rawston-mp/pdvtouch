@@ -66,7 +66,7 @@ export default function LoginPin() {
           </button>
 
           <small style={{ opacity: 0.7 }}>
-            Dicas (seed): ADMIN 1111 • BALANÇA 2222 • GERENTE 3333 • CAIXA 4444 • ATENDENTE 5555
+            Dicas (seed): ADMIN 1111 • BALANÇA A 2222 • BALANÇA B 2233 • GERENTE 3333 • CAIXA 4444 • ATENDENTE 5555
           </small>
         </form>
       </div>

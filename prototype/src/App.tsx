@@ -1,4 +1,5 @@
 // src/App.tsx
+import React from 'react'
 import { NavLink, Routes, Route } from 'react-router-dom'
 import { SessionProvider, useSession } from './auth/session'
 import { RequireRole } from './utils/guard'
@@ -31,6 +32,16 @@ function Layout() {
     window.location.href = '/'
   }
 
+  // Redirecionamento automático para balanças
+  React.useEffect(() => {
+    if (user && (user.role === 'BALANÇA A' || user.role === 'BALANÇA B')) {
+      const currentPath = window.location.pathname
+      if (currentPath !== '/venda' && currentPath !== '/') {
+        window.location.href = '/venda'
+      }
+    }
+  }, [user])
+
   return (
     <div>
       <LoginPin />
@@ -38,30 +49,46 @@ function Layout() {
       <div style={topbar}>
         <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
           <b>PDVTouch (Protótipo)</b>
+          
+          {/* Venda: disponível para todos */}
           <NavLink to="/venda" className={linkCls}>
             Venda
           </NavLink>
-          <NavLink to="/finalizacao" className={linkCls}>
-            Finalização
-          </NavLink>
-          <NavLink to="/impressao" className={linkCls}>
-            Impressão
-          </NavLink>
-          <NavLink to="/relatorios" className={linkCls}>
-            Relatórios
-          </NavLink>
-          <NavLink to="/relatorioxz" className={linkCls}>
-            Relatório X/Z
-          </NavLink>
-          <NavLink to="/turno" className={linkCls}>
-            Turno
-          </NavLink>
-          <NavLink to="/sync" className={linkCls}>
-            Sync
-          </NavLink>
-          <NavLink to="/admin" className={linkCls}>
-            Admin
-          </NavLink>
+          
+          {/* Menus restritos: ocultos para balanças */}
+          {!user?.role.includes('BALANÇA') && (
+            <>
+              <NavLink to="/finalizacao" className={linkCls}>
+                Finalização
+              </NavLink>
+              <NavLink to="/impressao" className={linkCls}>
+                Impressão
+              </NavLink>
+              <NavLink to="/relatorios" className={linkCls}>
+                Relatórios
+              </NavLink>
+              <NavLink to="/relatorioxz" className={linkCls}>
+                Relatório X/Z
+              </NavLink>
+              <NavLink to="/turno" className={linkCls}>
+                Turno
+              </NavLink>
+            </>
+          )}
+          
+          {/* Sync: apenas Admin/Gerente */}
+          {(user?.role === 'ADMIN' || user?.role === 'GERENTE') && (
+            <NavLink to="/sync" className={linkCls}>
+              Sync
+            </NavLink>
+          )}
+          
+          {/* Admin: apenas Admin/Gerente */}
+          {(user?.role === 'ADMIN' || user?.role === 'GERENTE') && (
+            <NavLink to="/admin" className={linkCls}>
+              Admin
+            </NavLink>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <small style={{ opacity: 0.7 }}>
@@ -77,12 +104,69 @@ function Layout() {
         <Routes>
           <Route path="/" element={<VendaRapida />} />
           <Route path="/venda" element={<VendaRapida />} />
-          <Route path="/finalizacao" element={<Finalizacao />} />
-          <Route path="/impressao" element={<Impressao />} />
-          <Route path="/relatorios" element={<Relatorios />} />
-          <Route path="/relatorioxz" element={<RelatorioXZ />} />
-          <Route path="/turno" element={<Turno />} />
-          <Route path="/sync" element={<Sync />} />
+          
+          {/* Finalizacao: bloqueado para balanças */}
+          <Route 
+            path="/finalizacao" 
+            element={
+              <RequireRole 
+                roles={['ADMIN', 'GERENTE', 'CAIXA', 'ATENDENTE']}
+                blockMessage="Balanças não têm acesso à finalização. Use apenas a tela de Vendas."
+              >
+                <Finalizacao />
+              </RequireRole>
+            } 
+          />
+          
+          {/* Impressao: bloqueado para balanças */}
+          <Route 
+            path="/impressao" 
+            element={
+              <RequireRole roles={['ADMIN', 'GERENTE', 'CAIXA', 'ATENDENTE']}>
+                <Impressao />
+              </RequireRole>
+            } 
+          />
+          
+          {/* Relatorios: bloqueado para balanças */}
+          <Route 
+            path="/relatorios" 
+            element={
+              <RequireRole roles={['ADMIN', 'GERENTE', 'CAIXA']}>
+                <Relatorios />
+              </RequireRole>
+            } 
+          />
+          
+          {/* Relatorio X/Z: bloqueado para balanças */}
+          <Route 
+            path="/relatorioxz" 
+            element={
+              <RequireRole roles={['ADMIN', 'GERENTE', 'CAIXA']}>
+                <RelatorioXZ />
+              </RequireRole>
+            } 
+          />
+          
+          {/* Turno: bloqueado para balanças */}
+          <Route 
+            path="/turno" 
+            element={
+              <RequireRole roles={['ADMIN', 'GERENTE', 'CAIXA']}>
+                <Turno />
+              </RequireRole>
+            } 
+          />
+          
+          {/* Sync: bloqueado para balanças */}
+          <Route 
+            path="/sync" 
+            element={
+              <RequireRole roles={['ADMIN', 'GERENTE']}>
+                <Sync />
+              </RequireRole>
+            } 
+          />
 
           {/* PIX: permitido CAIXA, GERENTE, ADMIN */}
           <Route
