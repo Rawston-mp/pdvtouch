@@ -3,17 +3,26 @@ import path from 'path'
 
 // Função para registrar resultado de teste de usuário
 export interface RegistroTesteUsuario {
-  data: string;
-  testador: string;
-  versao: string;
-  cenario: string;
-  passos: string[];
-  resultados: string[];
-  checklist: string[];
-  feedback: string;
+  data: string
+  testador: string
+  versao: string
+  cenario: string
+  passos: string[]
+  resultados: string[]
+  checklist: string[]
+  feedback: string
 }
 
-export function registrarTesteUsuario({ data, testador, versao, cenario, passos, resultados, checklist, feedback }: RegistroTesteUsuario) {
+export function registrarTesteUsuario({
+  data,
+  testador,
+  versao,
+  cenario,
+  passos,
+  resultados,
+  checklist,
+  feedback,
+}: RegistroTesteUsuario) {
   const registro = {
     data,
     testador,
@@ -22,7 +31,7 @@ export function registrarTesteUsuario({ data, testador, versao, cenario, passos,
     passos,
     resultados,
     checklist,
-    feedback
+    feedback,
   }
   const filePath = path.join(__dirname, 'user-test-log.json')
   let logs = []
