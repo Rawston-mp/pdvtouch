@@ -25,7 +25,7 @@ export default function VendaBalanca() {
 
   function addPeso() {
     const pesoKg = Math.random() * 0.8 + 0.2 // 200g–1kg (mock)
-    const precoKg = 59.90
+    const precoKg = 59.9
     const total = precoKg * pesoKg
     const item: OrderItem = {
       id: crypto.randomUUID(),
@@ -34,9 +34,9 @@ export default function VendaBalanca() {
       qty: Number(pesoKg.toFixed(3)),
       unitPrice: precoKg,
       total: Number(total.toFixed(2)),
-      isWeight: true
+      isWeight: true,
     }
-    setItems(prev => [...prev, item])
+    setItems((prev) => [...prev, item])
   }
 
   function addExtra(nome: string, preco: number) {
@@ -47,13 +47,13 @@ export default function VendaBalanca() {
       qty: 1,
       unitPrice: preco,
       total: preco,
-      isWeight: false
+      isWeight: false,
     }
-    setItems(prev => [...prev, item])
+    setItems((prev) => [...prev, item])
   }
 
   function remover(id: string) {
-    setItems(prev => prev.filter(i => i.id !== id))
+    setItems((prev) => prev.filter((i) => i.id !== id))
   }
 
   const total = useMemo(() => items.reduce((s, i) => s + i.total, 0), [items])
@@ -66,7 +66,7 @@ export default function VendaBalanca() {
     const order: Order = {
       id: orderId,
       createdAt: Date.now(),
-      status: 'OPEN',    // aguardará pagamento no caixa
+      status: 'OPEN', // aguardará pagamento no caixa
       items,
       payments: [],
       total,
@@ -82,12 +82,20 @@ export default function VendaBalanca() {
     <div style={{ padding: 16 }}>
       <h2>Balança — Registrar Comanda</h2>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 8, alignItems: 'center', maxWidth: 520 }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '180px 1fr',
+          gap: 8,
+          alignItems: 'center',
+          maxWidth: 520,
+        }}
+      >
         <label>Nº Comanda (1–200)</label>
         <input
           type="text"
           value={comanda}
-          onChange={e => setComanda(e.target.value)}
+          onChange={(e) => setComanda(e.target.value)}
           placeholder="Digite ou leia código de barras"
           inputMode="numeric"
           style={{ padding: 10, borderRadius: 8, border: '1px solid #ddd' }}
@@ -100,28 +108,43 @@ export default function VendaBalanca() {
         </div>
       )}
 
-      <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap', opacity: comandaOk ? 1 : 0.5, pointerEvents: comandaOk ? 'auto' : 'none' }}>
+      <div
+        style={{
+          marginTop: 16,
+          display: 'flex',
+          gap: 8,
+          flexWrap: 'wrap',
+          opacity: comandaOk ? 1 : 0.5,
+          pointerEvents: comandaOk ? 'auto' : 'none',
+        }}
+      >
         <button onClick={addPeso}>Ler Peso</button>
         <button onClick={() => addExtra('Refrigerante Lata', 6)}>+ Refrigerante</button>
         <button onClick={() => addExtra('Sobremesa', 12)}>+ Sobremesa</button>
         <button onClick={() => addExtra('Suco', 8)}>+ Suco</button>
-        <button onClick={proximoCliente} style={{ background:'#0b5', color:'#fff' }}>Próximo Cliente (ESC)</button>
+        <button onClick={proximoCliente} style={{ background: '#0b5', color: '#fff' }}>
+          Próximo Cliente (ESC)
+        </button>
       </div>
 
       <ul style={{ marginTop: 16 }}>
-        {items.map(i => (
+        {items.map((i) => (
           <li key={i.id} style={{ marginBottom: 6 }}>
-            {i.name} — {i.isWeight ? i.qty.toFixed(3) + 'kg' : i.qty}
-            = <b>R$ {i.total.toFixed(2)}</b>
-            <button onClick={() => remover(i.id)} style={{ marginLeft: 8 }}>Remover</button>
+            {i.name} — {i.isWeight ? i.qty.toFixed(3) + 'kg' : i.qty}={' '}
+            <b>R$ {i.total.toFixed(2)}</b>
+            <button onClick={() => remover(i.id)} style={{ marginLeft: 8 }}>
+              Remover
+            </button>
           </li>
         ))}
-        {items.length === 0 && <li style={{ opacity: 0.7 }}><i>Nenhum item lançado.</i></li>}
+        {items.length === 0 && (
+          <li style={{ opacity: 0.7 }}>
+            <i>Nenhum item lançado.</i>
+          </li>
+        )}
       </ul>
 
-      <div style={{ marginTop: 12, fontWeight: 700 }}>
-        Total parcial: R$ {total.toFixed(2)}
-      </div>
+      <div style={{ marginTop: 12, fontWeight: 700 }}>Total parcial: R$ {total.toFixed(2)}</div>
     </div>
   )
 }

@@ -49,12 +49,12 @@ function Layout() {
       <div style={topbar}>
         <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
           <b>PDVTouch (Protótipo)</b>
-          
+
           {/* Venda: disponível para todos */}
           <NavLink to="/venda" className={linkCls}>
             Venda
           </NavLink>
-          
+
           {/* Menus restritos: ocultos para balanças */}
           {!user?.role.includes('BALANÇA') && (
             <>
@@ -75,14 +75,14 @@ function Layout() {
               </NavLink>
             </>
           )}
-          
+
           {/* Sync: apenas Admin/Gerente */}
           {(user?.role === 'ADMIN' || user?.role === 'GERENTE') && (
             <NavLink to="/sync" className={linkCls}>
               Sync
             </NavLink>
           )}
-          
+
           {/* Admin: apenas Admin/Gerente */}
           {(user?.role === 'ADMIN' || user?.role === 'GERENTE') && (
             <NavLink to="/admin" className={linkCls}>
@@ -104,68 +104,68 @@ function Layout() {
         <Routes>
           <Route path="/" element={<VendaRapida />} />
           <Route path="/venda" element={<VendaRapida />} />
-          
+
           {/* Finalizacao: bloqueado para balanças */}
-          <Route 
-            path="/finalizacao" 
+          <Route
+            path="/finalizacao"
             element={
-              <RequireRole 
+              <RequireRole
                 roles={['ADMIN', 'GERENTE', 'CAIXA', 'ATENDENTE']}
                 blockMessage="Balanças não têm acesso à finalização. Use apenas a tela de Vendas."
               >
                 <Finalizacao />
               </RequireRole>
-            } 
+            }
           />
-          
+
           {/* Impressao: bloqueado para balanças */}
-          <Route 
-            path="/impressao" 
+          <Route
+            path="/impressao"
             element={
               <RequireRole roles={['ADMIN', 'GERENTE', 'CAIXA', 'ATENDENTE']}>
                 <Impressao />
               </RequireRole>
-            } 
+            }
           />
-          
+
           {/* Relatorios: bloqueado para balanças */}
-          <Route 
-            path="/relatorios" 
+          <Route
+            path="/relatorios"
             element={
               <RequireRole roles={['ADMIN', 'GERENTE', 'CAIXA']}>
                 <Relatorios />
               </RequireRole>
-            } 
+            }
           />
-          
+
           {/* Relatorio X/Z: bloqueado para balanças */}
-          <Route 
-            path="/relatorioxz" 
+          <Route
+            path="/relatorioxz"
             element={
               <RequireRole roles={['ADMIN', 'GERENTE', 'CAIXA']}>
                 <RelatorioXZ />
               </RequireRole>
-            } 
+            }
           />
-          
+
           {/* Turno: bloqueado para balanças */}
-          <Route 
-            path="/turno" 
+          <Route
+            path="/turno"
             element={
               <RequireRole roles={['ADMIN', 'GERENTE', 'CAIXA']}>
                 <Turno />
               </RequireRole>
-            } 
+            }
           />
-          
+
           {/* Sync: bloqueado para balanças */}
-          <Route 
-            path="/sync" 
+          <Route
+            path="/sync"
             element={
               <RequireRole roles={['ADMIN', 'GERENTE']}>
                 <Sync />
               </RequireRole>
-            } 
+            }
           />
 
           {/* PIX: permitido CAIXA, GERENTE, ADMIN */}

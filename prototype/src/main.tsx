@@ -1,4 +1,4 @@
-import './utils/theme'   // inicializa tema + atalho Alt+D
+import './utils/theme' // inicializa tema + atalho Alt+D
 
 // src/main.tsx
 import React from 'react'
@@ -17,5 +17,5 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
     <BrowserRouter>
       <App />
     </BrowserRouter>
-  </React.StrictMode>
+  </React.StrictMode>,
 )

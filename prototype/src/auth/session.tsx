@@ -1,10 +1,10 @@
 // src/auth/session.tsx
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react"
-import type { Role, User } from "../db"
-import { initDb } from "../db"
-import { findByPin } from "../db/users"
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import type { Role, User } from '../db'
+import { initDb } from '../db'
+import { findByPin } from '../db/users'
 
-type SessionUser = Pick<User, "id" | "name" | "role">
+type SessionUser = Pick<User, 'id' | 'name' | 'role'>
 
 type Session = {
   user: SessionUser | null
@@ -19,17 +19,17 @@ const SessionCtx = createContext<Session>({
   hasRole: () => false,
   signInWithPin: async () => false,
   signOut: () => {},
-  isAuthenticated: false
+  isAuthenticated: false,
 })
 
-const LS_KEY = "pdv.session.v2"
+const LS_KEY = 'pdv.session.v2'
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null)
   const [isLoaded, setIsLoaded] = useState(false)
 
   useEffect(() => {
-    (async () => {
+    ;(async () => {
       try {
         await initDb()
         const raw = localStorage.getItem(LS_KEY)
@@ -44,7 +44,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           }
         }
       } catch (error) {
-        console.error("Erro ao inicializar sessão:", error)
+        console.error('Erro ao inicializar sessão:', error)
       } finally {
         setIsLoaded(true)
       }
@@ -60,25 +60,28 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   async function signInWithPin(pin: string) {
     try {
       if (!pin || pin.length < 4) return false
-      
+
       const u = await findByPin(pin)
       if (!u || !u.active) return false
-      
-      const sessionUser: SessionUser = { 
-        id: u.id, 
-        name: u.name, 
-        role: u.role 
+
+      const sessionUser: SessionUser = {
+        id: u.id,
+        name: u.name,
+        role: u.role,
       }
-      
+
       setUser(sessionUser)
-      localStorage.setItem(LS_KEY, JSON.stringify({ 
-        user: sessionUser, 
-        timestamp: Date.now() 
-      }))
-      
+      localStorage.setItem(
+        LS_KEY,
+        JSON.stringify({
+          user: sessionUser,
+          timestamp: Date.now(),
+        }),
+      )
+
       return true
     } catch (error) {
-      console.error("Erro no login:", error)
+      console.error('Erro no login:', error)
       return false
     }
   }
@@ -90,13 +93,16 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const isAuthenticated = !!user
 
-  const value = useMemo(() => ({ 
-    user, 
-    hasRole, 
-    signInWithPin, 
-    signOut, 
-    isAuthenticated 
-  }), [user])
+  const value = useMemo(
+    () => ({
+      user,
+      hasRole,
+      signInWithPin,
+      signOut,
+      isAuthenticated,
+    }),
+    [user],
+  )
 
   if (!isLoaded) {
     return <div>Carregando...</div>

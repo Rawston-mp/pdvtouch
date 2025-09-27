@@ -1,17 +1,12 @@
 // src/pages/Finalizacao.tsx
-import React, { useEffect, useMemo, useState } from "react"
-import { useLocation, useNavigate } from "react-router-dom"
+import React, { useEffect, useMemo, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 
-import { useSession } from "../auth/session"
-import {
-  loadCartDraft,
-  saveCartDraft,
-  removeCartDraft,
-  type CartItem,
-} from "../lib/cartStorage"
-import { printText } from "../mock/devices"
+import { useSession } from '../auth/session'
+import { loadCartDraft, saveCartDraft, removeCartDraft, type CartItem } from '../lib/cartStorage'
+import { printText } from '../mock/devices'
 
-type DocType = "NAO_FISCAL" | "NFCE"
+type DocType = 'NAO_FISCAL' | 'NFCE'
 
 const toNumber = (v: any, fallback = 0) => {
   const n = Number(v)
@@ -23,7 +18,7 @@ const money = (v: any) => toNumber(v).toFixed(2)
 function parseOrderFromScan(val: string): number | null {
   if (!val) return null
   // Normaliza: pega somente dígitos
-  const digits = (val.match(/\d+/g) || []).join("")
+  const digits = (val.match(/\d+/g) || []).join('')
   if (!digits) return null
   const n = Number(digits)
   if (!Number.isFinite(n)) return null
@@ -36,11 +31,14 @@ export default function Finalizacao() {
   const { state } = useLocation() as any
 
   const { user } = useSession()
-  const roleRaw = (user?.role ?? "CAIXA") as string
-  const role = roleRaw.normalize("NFD").replace(/\p{Diacritic}/gu, "").toUpperCase() // BALANÇA→BALANCA
+  const roleRaw = (user?.role ?? 'CAIXA') as string
+  const role = roleRaw
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toUpperCase() // BALANÇA→BALANCA
 
   // Bloqueio: balança não finaliza
-  if (role === "BALANCA") {
+  if (role === 'BALANCA') {
     return (
       <div className="container">
         <h2>Finalização</h2>
@@ -49,7 +47,9 @@ export default function Finalizacao() {
           <p className="muted">
             O perfil <b>Balança</b> não possui permissão para finalizar comandas.
           </p>
-          <button onClick={() => nav("/venda")} className="btn">Voltar</button>
+          <button onClick={() => nav('/venda')} className="btn">
+            Voltar
+          </button>
         </div>
       </div>
     )
@@ -57,30 +57,28 @@ export default function Finalizacao() {
 
   // estado inicial
   const [orderIdInput, setOrderIdInput] = useState<string>(
-    state?.orderId ? String(state.orderId) : ""
+    state?.orderId ? String(state.orderId) : '',
   )
   const [orderId, setOrderId] = useState<number | null>(state?.orderId ?? null)
-  const [cart, setCart] = useState<CartItem[]>(
-    Array.isArray(state?.cart) ? state.cart : []
-  )
+  const [cart, setCart] = useState<CartItem[]>(Array.isArray(state?.cart) ? state.cart : [])
 
-  const [doc, setDoc] = useState<DocType>("NAO_FISCAL")
-  const [idFiscal, setIdFiscal] = useState<string>("") // CPF/CNPJ opcional
+  const [doc, setDoc] = useState<DocType>('NAO_FISCAL')
+  const [idFiscal, setIdFiscal] = useState<string>('') // CPF/CNPJ opcional
 
   // pagamentos
-  const [vCash, setVCash] = useState<string>("0")
-  const [vPix, setVPix] = useState<string>("0")
-  const [vTef, setVTef] = useState<string>("0")
-  const [subtotalInfo, setSubtotalInfo] = useState<string>("0")
+  const [vCash, setVCash] = useState<string>('0')
+  const [vPix, setVPix] = useState<string>('0')
+  const [vTef, setVTef] = useState<string>('0')
+  const [subtotalInfo, setSubtotalInfo] = useState<string>('0')
 
   // derivados
   const total = useMemo(
     () => cart.reduce((acc, it) => acc + toNumber(it.qty) * toNumber(it.price), 0),
-    [cart]
+    [cart],
   )
   const pagos = useMemo(
     () => toNumber(vCash) + toNumber(vPix) + toNumber(vTef),
-    [vCash, vPix, vTef]
+    [vCash, vPix, vTef],
   )
   const falta = useMemo(() => Math.max(0, total - pagos), [total, pagos])
 
@@ -88,28 +86,48 @@ export default function Finalizacao() {
   async function loadByOrder() {
     const parsed = parseOrderFromScan(orderIdInput)
     if (parsed == null) {
-      alert("Informe/escaneie um Nº de comanda válido (1–200).")
+      alert('Informe/escaneie um Nº de comanda válido (1–200).')
       return
     }
     const draft = loadCartDraft(parsed) || []
     setOrderId(parsed)
     setCart(draft.map((x) => ({ ...x, price: toNumber(x.price), qty: toNumber(x.qty) })))
     // zera pagamentos ao trocar de comanda
-    setVCash("0"); setVPix("0"); setVTef("0")
+    setVCash('0')
+    setVPix('0')
+    setVTef('0')
   }
 
   // Atalhos
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "F6") { e.preventDefault(); set100("cash") }
-      if (e.key === "F7") { e.preventDefault(); set100("pix") }
-      if (e.key === "F8") { e.preventDefault(); set100("tef") }
-      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); confirmar() }
-      if (e.key === "Escape") { e.preventDefault(); nav("/venda") }
-      if (e.key === "F3") { e.preventDefault(); setDoc("NFCE") }
+      if (e.key === 'F6') {
+        e.preventDefault()
+        set100('cash')
+      }
+      if (e.key === 'F7') {
+        e.preventDefault()
+        set100('pix')
+      }
+      if (e.key === 'F8') {
+        e.preventDefault()
+        set100('tef')
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault()
+        confirmar()
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        nav('/venda')
+      }
+      if (e.key === 'F3') {
+        e.preventDefault()
+        setDoc('NFCE')
+      }
     }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [total, vCash, vPix, vTef, cart, orderId, doc, idFiscal])
 
@@ -119,65 +137,63 @@ export default function Finalizacao() {
   }, [cart, orderId])
 
   // Edição de itens
-  const canEditPrice = role === "GERENTE" || role === "ADMIN"
+  const canEditPrice = role === 'GERENTE' || role === 'ADMIN'
 
   function updateQty(it: CartItem, next: string) {
-    setCart((c) =>
-      c.map((x) => (x.id === it.id ? { ...x, qty: Math.max(0, toNumber(next)) } : x))
-    )
+    setCart((c) => c.map((x) => (x.id === it.id ? { ...x, qty: Math.max(0, toNumber(next)) } : x)))
   }
   function updatePrice(it: CartItem, next: string) {
     if (!canEditPrice) return
     setCart((c) =>
-      c.map((x) => (x.id === it.id ? { ...x, price: Math.max(0, toNumber(next)) } : x))
+      c.map((x) => (x.id === it.id ? { ...x, price: Math.max(0, toNumber(next)) } : x)),
     )
   }
   function removeItem(it: CartItem) {
     setCart((c) => c.filter((x) => x.id !== it.id))
   }
 
-  function set100(which: "cash" | "pix" | "tef") {
+  function set100(which: 'cash' | 'pix' | 'tef') {
     const resto = Math.max(
       0,
       total -
-        (which === "cash"
+        (which === 'cash'
           ? toNumber(vPix) + toNumber(vTef)
-          : which === "pix"
-          ? toNumber(vCash) + toNumber(vTef)
-          : toNumber(vCash) + toNumber(vPix))
+          : which === 'pix'
+            ? toNumber(vCash) + toNumber(vTef)
+            : toNumber(vCash) + toNumber(vPix)),
     )
     const v = money(resto)
-    if (which === "cash") setVCash(v)
-    if (which === "pix") setVPix(v)
-    if (which === "tef") setVTef(v)
+    if (which === 'cash') setVCash(v)
+    if (which === 'pix') setVPix(v)
+    if (which === 'tef') setVTef(v)
   }
 
   async function confirmar() {
     if (orderId == null) {
-      alert("Informe/escaneie a comanda para finalizar.")
+      alert('Informe/escaneie a comanda para finalizar.')
       return
     }
     if (!cart.length) {
-      alert("Comanda vazia.")
+      alert('Comanda vazia.')
       return
     }
     if (toNumber(subtotalInfo) > 0 && Math.abs(toNumber(subtotalInfo) - total) > 0.009) {
-      alert("O subtotal informado não confere com o total calculado.")
+      alert('O subtotal informado não confere com o total calculado.')
       return
     }
     if (Math.abs(total - pagos) > 0.009) {
-      alert("Os pagamentos não fecham com o total.")
+      alert('Os pagamentos não fecham com o total.')
       return
     }
 
     // PIX → vai para a tela dedicada
     if (toNumber(vPix) > 0) {
-      nav("/pix", {
+      nav('/pix', {
         state: {
           orderId,
           amount: toNumber(vPix),
           cart,
-          from: "finalizacao",
+          from: 'finalizacao',
           doc,
           idFiscal,
         },
@@ -187,11 +203,11 @@ export default function Finalizacao() {
 
     // Mock NFC-e: imprime e encerra
     await printText(
-      `[MOCK] Confirmação: R$ ${money(total)} | CASH ${money(vCash)} | TEF ${money(vTef)} | DOC ${doc}${idFiscal ? " (" + idFiscal + ")" : ""}`
+      `[MOCK] Confirmação: R$ ${money(total)} | CASH ${money(vCash)} | TEF ${money(vTef)} | DOC ${doc}${idFiscal ? ' (' + idFiscal + ')' : ''}`,
     )
     removeCartDraft(orderId)
-    alert("Pagamento confirmado (mock). Comanda encerrada.")
-    nav("/relatorioxz")
+    alert('Pagamento confirmado (mock). Comanda encerrada.')
+    nav('/relatorioxz')
   }
 
   return (
@@ -208,13 +224,17 @@ export default function Finalizacao() {
               value={orderIdInput}
               onChange={(e) => setOrderIdInput(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") loadByOrder()
+                if (e.key === 'Enter') loadByOrder()
               }}
               placeholder="Ex.: 15 ou código"
               style={{ width: 220 }}
             />
-            <button className="btn btn-primary" onClick={loadByOrder}>Buscar</button>
-            <button onClick={() => nav("/venda")} className="btn">Voltar</button>
+            <button className="btn btn-primary" onClick={loadByOrder}>
+              Buscar
+            </button>
+            <button onClick={() => nav('/venda')} className="btn">
+              Voltar
+            </button>
           </div>
           <p className="muted small" style={{ marginTop: 8 }}>
             Dica: deixe o cursor neste campo e use o leitor; a leitura (com Enter ao final)
@@ -237,7 +257,7 @@ export default function Finalizacao() {
               <table className="table">
                 <thead>
                   <tr>
-                    <th style={{ width: "40%" }}>Item</th>
+                    <th style={{ width: '40%' }}>Item</th>
                     <th>Qtd (kg/un)</th>
                     <th>Preço un.</th>
                     <th>Total</th>
@@ -253,7 +273,7 @@ export default function Finalizacao() {
                           value={String(it.qty)}
                           onChange={(e) => updateQty(it, e.target.value)}
                           className="input-sm"
-                          style={{ width: 90, textAlign: "right" }}
+                          style={{ width: 90, textAlign: 'right' }}
                         />
                       </td>
                       <td>
@@ -261,25 +281,29 @@ export default function Finalizacao() {
                           value={String(it.price)}
                           onChange={(e) => updatePrice(it, e.target.value)}
                           className="input-sm"
-                          style={{ width: 90, textAlign: "right" }}
+                          style={{ width: 90, textAlign: 'right' }}
                           disabled={!canEditPrice}
                           title={
                             canEditPrice
-                              ? "Editar preço (gerente/admin)"
-                              : "Somente gerente/admin podem editar preço"
+                              ? 'Editar preço (gerente/admin)'
+                              : 'Somente gerente/admin podem editar preço'
                           }
                         />
                       </td>
                       <td>R$ {money(toNumber(it.qty) * toNumber(it.price))}</td>
                       <td>
-                        <button className="btn" onClick={() => removeItem(it)}>Remover</button>
+                        <button className="btn" onClick={() => removeItem(it)}>
+                          Remover
+                        </button>
                       </td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot>
                   <tr>
-                    <th colSpan={3} style={{ textAlign: "right" }}>Total:</th>
+                    <th colSpan={3} style={{ textAlign: 'right' }}>
+                      Total:
+                    </th>
                     <th>R$ {money(total)}</th>
                     <th />
                   </tr>
@@ -292,15 +316,15 @@ export default function Finalizacao() {
             <h3 className="card-title">Documento</h3>
             <div className="row" style={{ gap: 8, marginBottom: 8 }}>
               <button
-                className={`pill ${doc === "NAO_FISCAL" ? "active" : ""}`}
-                onClick={() => setDoc("NAO_FISCAL")}
+                className={`pill ${doc === 'NAO_FISCAL' ? 'active' : ''}`}
+                onClick={() => setDoc('NAO_FISCAL')}
                 title="ALT+N"
               >
                 Não fiscal (Orçamento)
               </button>
               <button
-                className={`pill ${doc === "NFCE" ? "active" : ""}`}
-                onClick={() => setDoc("NFCE")}
+                className={`pill ${doc === 'NFCE' ? 'active' : ''}`}
+                onClick={() => setDoc('NFCE')}
                 title="F3"
               >
                 Fiscal (NFC-e)
@@ -320,49 +344,59 @@ export default function Finalizacao() {
             <h3 className="card-title">Pagamentos</h3>
             <div className="grid grid-3">
               <div>
-                <label>Dinheiro <span className="muted">F6</span></label>
+                <label>
+                  Dinheiro <span className="muted">F6</span>
+                </label>
                 <div className="row" style={{ gap: 8 }}>
                   <input
                     value={vCash}
                     onChange={(e) => setVCash(e.target.value)}
                     className="input-lg"
-                    style={{ width: 140, textAlign: "right" }}
+                    style={{ width: 140, textAlign: 'right' }}
                   />
-                  <button onClick={() => set100("cash")}>100%</button>
+                  <button onClick={() => set100('cash')}>100%</button>
                 </div>
               </div>
 
               <div>
-                <label>PIX <span className="muted">F7</span></label>
+                <label>
+                  PIX <span className="muted">F7</span>
+                </label>
                 <div className="row" style={{ gap: 8 }}>
                   <input
                     value={vPix}
                     onChange={(e) => setVPix(e.target.value)}
                     className="input-lg"
-                    style={{ width: 140, textAlign: "right" }}
+                    style={{ width: 140, textAlign: 'right' }}
                   />
-                  <button onClick={() => set100("pix")}>100%</button>
+                  <button onClick={() => set100('pix')}>100%</button>
                 </div>
               </div>
 
               <div>
-                <label>Cartão (TEF) <span className="muted">F8</span></label>
+                <label>
+                  Cartão (TEF) <span className="muted">F8</span>
+                </label>
                 <div className="row" style={{ gap: 8 }}>
                   <input
                     value={vTef}
                     onChange={(e) => setVTef(e.target.value)}
                     className="input-lg"
-                    style={{ width: 140, textAlign: "right" }}
+                    style={{ width: 140, textAlign: 'right' }}
                   />
-                  <button onClick={() => set100("tef")}>100%</button>
+                  <button onClick={() => set100('tef')}>100%</button>
                 </div>
               </div>
             </div>
 
             <div className="row" style={{ gap: 16, marginTop: 12 }}>
-              <div className="pill">Total: <b>R$ {money(total)}</b></div>
-              <div className="pill">Pago: <b>R$ {money(pagos)}</b></div>
-              <div className={`pill ${falta === 0 ? "success" : ""}`}>
+              <div className="pill">
+                Total: <b>R$ {money(total)}</b>
+              </div>
+              <div className="pill">
+                Pago: <b>R$ {money(pagos)}</b>
+              </div>
+              <div className={`pill ${falta === 0 ? 'success' : ''}`}>
                 Falta: <b>R$ {money(falta)}</b>
               </div>
               <div className="row" style={{ gap: 8 }}>
@@ -371,14 +405,16 @@ export default function Finalizacao() {
                   value={subtotalInfo}
                   onChange={(e) => setSubtotalInfo(e.target.value)}
                   className="input-sm"
-                  style={{ width: 120, textAlign: "right" }}
+                  style={{ width: 120, textAlign: 'right' }}
                 />
               </div>
             </div>
           </div>
 
           <div className="row" style={{ gap: 8 }}>
-            <button onClick={() => nav("/venda")} className="btn">Voltar</button>
+            <button onClick={() => nav('/venda')} className="btn">
+              Voltar
+            </button>
             <button className="btn btn-primary" onClick={confirmar} title="Ctrl+Enter">
               Confirmar pagamento (Ctrl+Enter)
             </button>

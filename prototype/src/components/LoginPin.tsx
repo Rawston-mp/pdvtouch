@@ -57,7 +57,7 @@ export default function LoginPin() {
             pattern="\d*"
             placeholder="PIN"
             value={pin}
-            onChange={e => setPin(e.target.value)}
+            onChange={(e) => setPin(e.target.value)}
             style={inp}
           />
           {error && <div style={err}>{error}</div>}
@@ -66,7 +66,8 @@ export default function LoginPin() {
           </button>
 
           <small style={{ opacity: 0.7 }}>
-            Dicas (seed): ADMIN 1111 • BALANÇA A 2222 • BALANÇA B 2233 • GERENTE 3333 • CAIXA 4444 • ATENDENTE 5555
+            Dicas (seed): ADMIN 1111 • BALANÇA A 2222 • BALANÇA B 2233 • GERENTE 3333 • CAIXA 4444 •
+            ATENDENTE 5555
           </small>
         </form>
       </div>
