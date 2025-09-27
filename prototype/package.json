@@ -1,0 +1,39 @@
+{
+  "name": "prototype",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "mock:ws": "node mock/ws-server.mjs",
+    "dev:all": "concurrently -n WEB,WS -c auto \"npm run dev\" \"npm run mock:ws\""
+  },
+  "dependencies": {
+    "dexie": "^4.2.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-qr-code": "^2.0.18",
+    "react-router-dom": "^7.8.2",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.33.0",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
+    "@typescript-eslint/eslint-plugin": "^8.42.0",
+    "@typescript-eslint/parser": "^8.42.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "concurrently": "^9.2.1",
+    "eslint": "^9.34.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.20",
+    "globals": "^16.3.0",
+    "json-server": "^1.0.0-beta.3",
+    "prettier": "^3.6.2",
+    "typescript": "~5.8.3",
+    "typescript-eslint": "^8.39.1",
+    "vite": "^7.1.2",
+    "ws": "^8.18.3"
+  }
+}
