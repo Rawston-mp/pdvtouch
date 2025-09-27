@@ -5,6 +5,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useSession } from '../auth/session'
 import { loadCartDraft, saveCartDraft, removeCartDraft, type CartItem } from '../lib/cartStorage'
 import { printText } from '../mock/devices'
+import { addSale } from '../db/sales'
 
 type DocType = 'NAO_FISCAL' | 'NFCE'
 
@@ -201,13 +202,39 @@ export default function Finalizacao() {
       return
     }
 
-    // Mock NFC-e: imprime e encerra
-    await printText(
-      `[MOCK] Confirmação: R$ ${money(total)} | CASH ${money(vCash)} | TEF ${money(vTef)} | DOC ${doc}${idFiscal ? ' (' + idFiscal + ')' : ''}`,
-    )
-    removeCartDraft(orderId)
-    alert('Pagamento confirmado (mock). Comanda encerrada.')
-    nav('/relatorioxz')
+    // Salvar venda no banco de dados
+    try {
+      await addSale({
+        orderId,
+        timestamp: Date.now(),
+        userId: user!.id,
+        userName: user!.name,
+        userRole: user!.role,
+        items: cart,
+        total,
+        payments: {
+          cash: toNumber(vCash),
+          pix: toNumber(vPix),
+          tef: toNumber(vTef)
+        },
+        docType: doc,
+        fiscalId: idFiscal || undefined,
+        status: 'COMPLETED'
+      })
+
+      // Mock NFC-e: imprime e encerra
+      printText('fiscal01',
+        `[MOCK] Confirmação: R$ ${money(total)} | CASH ${money(vCash)} | TEF ${money(vTef)} | DOC ${doc}${idFiscal ? ' (' + idFiscal + ')' : ''}`
+      )
+      
+      removeCartDraft(orderId)
+      alert('Pagamento confirmado! Comanda encerrada e registrada no sistema.')
+      nav('/relatorioxz')
+    } catch (error) {
+      console.error('Erro ao salvar venda:', error)
+      alert('Erro ao registrar venda. Tente novamente.')
+      return
+    }
   }
 
   return (

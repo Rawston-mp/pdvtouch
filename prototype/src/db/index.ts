@@ -41,20 +41,58 @@ export type User = {
   active: boolean
 }
 
+export type Sale = {
+  id?: number
+  orderId: number
+  timestamp: number
+  userId: string
+  userName: string
+  userRole: string
+  items: any[]
+  total: number
+  payments: {
+    cash: number
+    pix: number
+    tef: number
+  }
+  docType: 'NAO_FISCAL' | 'NFCE'
+  fiscalId?: string
+  status: 'COMPLETED' | 'CANCELLED'
+}
+
+export type ShiftSummary = {
+  id?: number
+  userId: string
+  userName: string
+  startTime: number
+  endTime?: number
+  totalSales: number
+  totalAmount: number
+  cashAmount: number
+  pixAmount: number
+  tefAmount: number
+  salesCount: number
+  status: 'OPEN' | 'CLOSED'
+}
+
 // DB
 class PDVDB extends Dexie {
   settings!: Table<Settings, string>
   printers!: Table<Printer, string>
   products!: Table<Product, string>
   users!: Table<User, string>
+  sales!: Table<Sale, number>
+  shifts!: Table<ShiftSummary, number>
 
   constructor() {
     super('pdvtouch-proto')
-    this.version(3).stores({
+    this.version(4).stores({
       settings: 'id',
       printers: 'id',
       products: 'id, code, category, byWeight',
       users: 'id, role, active',
+      sales: '++id, orderId, timestamp, userId, status',
+      shifts: '++id, userId, startTime, status',
     })
     this.on('populate', async () => {
       await seedAll(this)

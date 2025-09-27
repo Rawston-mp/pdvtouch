@@ -2,7 +2,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import { listProducts, type Product } from '../db/products'
+import { listProducts } from '../db/products'
+import type { Product } from '../db'
 import { requestWeight, printText } from '../mock/devices'
 import {
   saveCartDraft,
@@ -559,7 +560,7 @@ export default function VendaRapida() {
           <div className="row" style={{ gap: 8, marginTop: 8 }}>
             <button
               disabled={!orderActive}
-              onClick={() => printText('Cupom (mock)')}
+              onClick={() => printText('fiscal01', 'Cupom (mock)')}
               className="btn"
             >
               Imprimir cupom (mock)

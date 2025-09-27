@@ -1,5 +1,6 @@
 // src/pages/Admin.tsx
 import { Link } from 'react-router-dom'
+import { resetAllData } from '../db/sales'
 
 import { useSession } from '../auth/session'
 
@@ -47,6 +48,22 @@ export default function Admin() {
           <li><Link to="/relatorioxz">Relatório X/Z</Link></li>
           <li><Link to="/turno">Turno (abertura/suprimento/sangria)</Link></li>
           <li><Link to="/sync">Sync</Link></li>
+          <li>
+            <button
+              onClick={async () => {
+                const ok = window.confirm('Limpar TUDO (comandas rascunho, vendas e turnos)?')
+                if (!ok) return
+                try {
+                  const res = await resetAllData()
+                  alert(`Limpeza concluída. Rascunhos removidos: ${res.removedDrafts}.`)
+                } catch (e) {
+                  alert('Erro ao limpar dados.')
+                }
+              }}
+            >
+              🗑️ Limpar TUDO (Reset)
+            </button>
+          </li>
         </ul>
       </div>
     </div>
