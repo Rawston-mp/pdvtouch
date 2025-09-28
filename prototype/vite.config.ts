@@ -18,7 +18,7 @@ export default defineConfig(({ mode }) => {
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-        includeAssets: ['vite.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'offline.html'],
+  includeAssets: ['vite.svg', 'favicon.ico', 'icons/icon-192.png', 'icons/icon-512.png', 'apple-touch-icon.png', 'offline.html'],
       manifest: {
         name: 'PDVTouch',
         short_name: 'PDVTouch',

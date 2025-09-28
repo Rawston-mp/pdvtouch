@@ -9,7 +9,9 @@
     "preview": "vite preview --host",
     "mock:ws": "node mock/ws-server.mjs",
     "dev:all": "concurrently -n WEB,WS -c auto \"npm run dev\" \"npm run mock:ws\"",
-    "type-check": "tsc --noEmit -p tsconfig.json"
+    "type-check": "tsc --noEmit -p tsconfig.json",
+  "icons": "node scripts/generate-icons.mjs src/assets/logo.svg",
+  "icons:from": "node scripts/generate-icons.mjs"
   },
   "dependencies": {
     "dexie": "^4.2.0",
@@ -33,6 +35,8 @@
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^16.3.0",
     "json-server": "^1.0.0-beta.3",
+    "sharp": "^0.33.5",
+  "png-to-ico": "^2.1.2",
     "prettier": "^3.6.2",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.39.1",

@@ -37,6 +37,35 @@ As variáveis acima ajustam:
 - Manifest+Workbox já configurados (autoUpdate). Fallback offline: `public/offline.html`.
 - iOS: apple-touch-icon e metatags de status bar já incluídas.
 
+Gerar ícones a partir da logomarca (SVG recomendado):
+
+1) Salve seu arquivo em `src/assets/logo.svg` (ou `.png`).
+2) Rode o utilitário:
+
+```
+npm run icons
+```
+
+Isso criará:
+- `public/icons/icon-{16,32,48,72,96,144,192,256,384,512}.png`
+- `public/apple-touch-icon.png` (180x180)
+
+Dica:
+- Se você já personalizou `icon-16.png` e `icon-32.png`, o gerador NÃO vai sobrescrever esses dois arquivos (preservação automática).
+- Para gerar ícones a partir de um arquivo específico (ex.: uma imagem enviada):
+
+```
+npm run icons:from caminho/para/sua-imagem.png
+```
+
+Para substituir também os favicons pequenos (16/32) pela nova arte, use a flag:
+
+```
+npm run icons:from -- --overwrite-small caminho/para/sua-imagem.png
+```
+
+Depois de gerar, faça um hard refresh no navegador (ou aguarde o Service Worker atualizar) para ver o novo ícone no PWA instalado.
+
 Instalação do app (PWA):
 - Apenas ADMIN verá o botão “Instalar app” na topbar quando o navegador permitir.
 - Ao publicar nova versão, aparecerá um toast “Nova versão disponível” com botão “Atualizar”.
