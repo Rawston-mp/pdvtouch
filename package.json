@@ -3,9 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
+    "dev": "npm --prefix prototype run dev",
+    "build": "npm --prefix prototype run build",
+    "preview": "npm --prefix prototype run preview",
+    "web": "npm --prefix prototype run dev:all",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",     
     "type-check": "tsc --noEmit"
   },

@@ -24,12 +24,14 @@ import { connectDevices, reconnectDevices } from './mock/devices'
 
 function Layout() {
   const { user, signOut } = useSession()
+  const [deferredPrompt, setDeferredPrompt] = React.useState<BeforeInstallPromptEvent | null>(null)
+  const [swUpdate, setSwUpdate] = React.useState<boolean>(false)
 
   function sair() {
     try {
       signOut()
-    } catch (e) {
-      /* erro ao sair */
+    } catch {
+      /* noop */
     }
     window.location.href = '/'
   }
@@ -43,6 +45,39 @@ function Layout() {
       }
     }
   }, [user])
+
+  // Captura o beforeinstallprompt para exibir o botão de instalar (apenas Admin/Gerente)
+  React.useEffect(() => {
+    const onBeforeInstall = (e: Event) => {
+      e.preventDefault()
+      setDeferredPrompt(e as unknown as BeforeInstallPromptEvent)
+    }
+    window.addEventListener('beforeinstallprompt', onBeforeInstall)
+    return () => window.removeEventListener('beforeinstallprompt', onBeforeInstall)
+  }, [])
+
+  // Detecta atualização do SW: mostra toast e botão de atualizar
+  React.useEffect(() => {
+    if (!('serviceWorker' in navigator)) return
+    navigator.serviceWorker.getRegistration().then((reg) => {
+      if (!reg) return
+      reg.addEventListener('updatefound', () => {
+        const installing = reg.installing
+        if (!installing) return
+        installing.addEventListener('statechange', () => {
+          if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+            setSwUpdate(true)
+          }
+        })
+      })
+    })
+  }, [])
+
+  function onInstallClick() {
+    if (!deferredPrompt) return
+    deferredPrompt.prompt()
+    deferredPrompt.userChoice.finally(() => setDeferredPrompt(null))
+  }
 
   return (
     <div>
@@ -102,6 +137,9 @@ function Layout() {
           <small style={{ opacity: 0.7 }}>
             {user ? `${user.name} — ${user.role}` : 'Sem sessão'}
           </small>
+          {(user?.role === 'ADMIN') && deferredPrompt && (
+            <button onClick={onInstallClick} style={{ padding: '4px 10px' }}>Instalar app</button>
+          )}
           <button onClick={sair} style={{ padding: '4px 10px' }}>
             Sair
           </button>
@@ -109,6 +147,12 @@ function Layout() {
       </div>
 
       <div style={{ padding: '8px 12px' }}>
+        {swUpdate && (
+          <div style={toastStyle}>
+            <span>Nova versão disponível</span>
+            <button onClick={() => window.location.reload()}>Atualizar</button>
+          </div>
+        )}
         <Routes>
           <Route path="/" element={<VendaRapida />} />
           <Route path="/venda" element={<VendaRapida />} />
@@ -238,6 +282,12 @@ export default function App() {
   )
 }
 
+// Tipagem local mínima para o evento beforeinstallprompt
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => void
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
+}
+
 function WsStatus() {
   const [status, setStatus] = React.useState<'open' | 'connecting' | 'closed'>('connecting')
 
@@ -300,4 +350,18 @@ const topbar: React.CSSProperties = {
 }
 function linkCls({ isActive }: { isActive: boolean }) {
   return isActive ? 'navlink active' : 'navlink'
+}
+
+const toastStyle: React.CSSProperties = {
+  position: 'fixed',
+  bottom: 12,
+  right: 12,
+  zIndex: 9999,
+  background: '#111',
+  color: '#fff',
+  padding: '10px 12px',
+  borderRadius: 10,
+  display: 'flex',
+  gap: 8,
+  alignItems: 'center',
 }

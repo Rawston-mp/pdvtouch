@@ -1,5 +1,5 @@
 // src/pages/VendaRapida.tsx
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { listProducts } from '../db/products'
@@ -8,10 +8,15 @@ import { requestWeight, printText } from '../mock/devices'
 import {
   saveCartDraft,
   loadCartDraft,
-  removeCartDraft,
   setCurrentOrderId,
   getCurrentOrderId,
   clearCurrentOrderId,
+  acquireOrderLock,
+  renewOrderLock,
+  releaseOrderLock,
+  isOrderLockedByOther,
+  getOrderLockInfo,
+  getLockTimings,
   type CartItem,
 } from '../lib/cartStorage'
 import { useSession } from '../auth/session'
@@ -24,32 +29,37 @@ const CATEGORIES: { key: Category; label: string }[] = [
   { key: 'Por Peso', label: 'Por Peso' },
 ]
 
-const num = (v: any, fallback = 0) => {
+const num = (v: unknown, fallback = 0): number => {
   const n = Number(v)
   return Number.isFinite(n) ? n : fallback
 }
-const fmt = (v: any) => num(v).toFixed(2)
+const fmt = (v: unknown) => num(v).toFixed(2)
 
 function isByWeight(p: Product): boolean {
-  const u = (p as any)?.unit?.toString()?.toLowerCase?.() || ''
-  const bw = (p as any)?.byWeight === true
-  return bw || u === 'kg' || u === 'peso' || u === 'weight'
+  if (p.byWeight === true) return true
+  const unitVal = (p as Record<string, unknown>)?.unit
+  const unit = typeof unitVal === 'string' ? unitVal.toLowerCase() : ''
+  return unit === 'kg' || unit === 'peso' || unit === 'weight'
 }
 function getCategory(p: Product): Category {
-  const raw = ((p as any)?.category ?? 'Pratos').toString()
-  const normalized =
-    raw.toLowerCase() === 'bebidas'
-      ? 'Bebidas'
-      : raw.toLowerCase() === 'sobremesas'
-        ? 'Sobremesas'
-        : 'Pratos'
-  return normalized as Category
+  if (p.category === 'Bebidas' || p.category === 'Sobremesas' || p.category === 'Pratos') {
+    return p.category
+  }
+  return 'Pratos'
 }
 
 export default function VendaRapida() {
   const nav = useNavigate()
   const { user } = useSession()
-  const role = (user?.role ?? 'CAIXA').toUpperCase()
+  const roleRaw = (user?.role ?? 'CAIXA') as string
+  const role = roleRaw
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toUpperCase()
+  const isBalancaRole = role.startsWith('BALANCA')
+
+  // Namespace por estação (usuário) para isolar a comanda atual no storage
+  const stationNs = useMemo(() => (user?.id ? `u:${user.id}` : undefined), [user?.id])
 
   const canFinalize =
     role === 'ADMIN' || role === 'GERENTE' || role === 'CAIXA' || role === 'ATENDENTE'
@@ -70,6 +80,8 @@ export default function VendaRapida() {
   // comanda
   const [orderId, setOrderId] = useState<number | null>(null)
   const orderActive = orderId != null
+  const [lockOwner, setLockOwner] = useState<string | null>(null)
+  const [lockSeconds, setLockSeconds] = useState<number>(0)
 
   // boot
   useEffect(() => {
@@ -77,7 +89,7 @@ export default function VendaRapida() {
       const prods = await listProducts()
       setCatalog(prods || [])
 
-      const current = getCurrentOrderId()
+  const current = getCurrentOrderId(stationNs)
       if (current != null && current >= 1 && current <= 200) {
         setOrderId(current)
         const loaded = loadCartDraft(current)
@@ -86,19 +98,55 @@ export default function VendaRapida() {
         }
       } else if (current != null) {
         // valor inválido (ex.: 0) encontrado no storage — limpa
-        clearCurrentOrderId()
+        clearCurrentOrderId(stationNs)
       }
     })()
-  }, [])
+  }, [stationNs])
+
+  // Observa lock para indicador visual
+  useEffect(() => {
+    if (!orderActive || orderId == null) { setLockOwner(null); setLockSeconds(0); return }
+    const owner = stationNs || 'local'
+    const tick = () => {
+      try {
+        const info = getOrderLockInfo(orderId)
+        if (!info) { setLockOwner(null); setLockSeconds(0); return }
+        const ttl = getLockTimings().ttlMs
+        const age = Date.now() - Number(info.ts)
+        const secs = Math.max(0, Math.ceil((ttl - age) / 1000))
+        setLockSeconds(secs)
+        setLockOwner(info.owner === owner ? owner : 'other')
+      } catch (err) { void err }
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [orderActive, orderId, stationNs])
 
   // persistência POR COMANDA: salva toda vez que carrinho muda
   useEffect(() => {
     if (orderActive) saveCartDraft(orderId!, cart)
   }, [cart, orderActive, orderId])
 
+  /** Próximo cliente (BALANÇA): salva rascunho da comanda e limpa a UI.
+   *  NÃO apaga o rascunho salvo.
+   */
+  const nextClient = useCallback(() => {
+    if (!orderActive) return
+    saveCartDraft(orderId!, cart)
+    setCart([])
+    setPesoItemId(null)
+    setQuickQty('0')
+    if (orderId != null) {
+      try { releaseOrderLock(orderId, stationNs || 'local') } catch (err) { void err }
+    }
+    clearCurrentOrderId(stationNs)
+    setOrderId(null)
+  }, [orderActive, orderId, cart, stationNs])
+
   // ESC = Próximo cliente somente BALANÇA
   useEffect(() => {
-    if (role !== 'BALANCA' && role !== 'BALANÇA') return
+    if (!isBalancaRole) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
@@ -107,7 +155,16 @@ export default function VendaRapida() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [role, orderId, cart])
+  }, [isBalancaRole, orderId, cart, nextClient])
+
+  // Mantém o lock renovado enquanto a comanda estiver ativa nesta estação
+  useEffect(() => {
+    if (!orderActive || orderId == null) return
+    const id = setInterval(() => {
+      try { renewOrderLock(orderId, stationNs || 'local') } catch (err) { void err }
+    }, 10000) // 10s
+    return () => clearInterval(id)
+  }, [orderActive, orderId, stationNs])
 
   const filtered = useMemo(() => {
     let base = catalog
@@ -117,7 +174,7 @@ export default function VendaRapida() {
     if (search.trim()) {
       const s = search.toLowerCase()
       base = base.filter(
-        (p: any) => p.name?.toLowerCase?.().includes(s) || p.code?.toLowerCase?.() === s,
+        (p: Product) => p.name.toLowerCase().includes(s) || (p.code?.toLowerCase?.() === s),
       )
     }
     return base
@@ -135,10 +192,19 @@ export default function VendaRapida() {
 
     // só dígitos -> comanda 1..200
     if (/^\d+$/.test(s)) {
-      const n = num(s, NaN)
+      const n = Number(s)
       if (Number.isFinite(n) && n >= 1 && n <= 200) {
+        const owner = stationNs || 'local'
+        if (isOrderLockedByOther(n, owner)) {
+          alert(`Comanda ${n} está sendo editada em outra estação.`)
+          return
+        }
+        if (!acquireOrderLock(n, owner)) {
+          alert(`Não foi possível adquirir o lock da comanda ${n}.`)
+          return
+        }
         setOrderId(n)
-        setCurrentOrderId(n)
+        setCurrentOrderId(n, stationNs)
 
         // carrega rascunho da comanda
         const d = loadCartDraft(n)
@@ -153,7 +219,7 @@ export default function VendaRapida() {
       alert('Antes de lançar itens por código, informe o Nº da comanda (1–200).')
       return
     }
-    const p = catalog.find((x: any) => x.code && x.code.toLowerCase() === s.toLowerCase())
+  const p = catalog.find((x: Product) => x.code && x.code.toLowerCase() === s.toLowerCase())
     if (!p) {
       alert('Código não encontrado.')
       return
@@ -163,10 +229,14 @@ export default function VendaRapida() {
   }
 
   function clearOrder() {
+    if (orderId != null) {
+      try { releaseOrderLock(orderId, stationNs || 'local') } catch (err) { void err }
+    }
     setOrderId(null)
-    clearCurrentOrderId()
+    clearCurrentOrderId(stationNs)
     setCart([])
     setPesoItemId(null)
+    // mantém quantidade rápida como está
   }
 
   // --------------- Carrinho ----------------
@@ -175,7 +245,7 @@ export default function VendaRapida() {
       alert('Antes de lançar itens, informe a Nº comanda.')
       return
     }
-    const price = num((p as any)?.price)
+  const price = num(p.price)
     const weight = isByWeight(p)
     const qty = typeof q === 'number' ? num(q, 0) : weight ? 0 : 1
 
@@ -194,11 +264,11 @@ export default function VendaRapida() {
         ...c,
         {
           id: p.id,
-          name: (p as any)?.name ?? 'Item',
+          name: p.name ?? 'Item',
           unit: weight ? 'kg' : 'unit',
           price,
           qty,
-          code: (p as any)?.code,
+          code: p.code,
         },
       ])
     }
@@ -228,14 +298,14 @@ export default function VendaRapida() {
     setPesoItemId(null)
     setQuickQty('0')
   }
-  /** Excluir rascunho da comanda (opcional, não usado por padrão). */
-  function deleteDraftPermanently() {
-    if (!orderActive) return
-    if (confirm(`Excluir rascunho da comanda ${orderId}?`)) {
-      removeCartDraft(orderId!)
-      clear()
-    }
-  }
+  // Excluir rascunho da comanda — função opcional (mantida comentada no UI)
+  // function deleteDraftPermanently() {
+  //   if (!orderActive) return
+  //   if (confirm(`Excluir rascunho da comanda ${orderId}?`)) {
+  //     removeCartDraft(orderId!)
+  //     clear()
+  //   }
+  // }
 
   // --------------- Keypad ----------------
   function onKeypad(k: string) {
@@ -255,14 +325,17 @@ export default function VendaRapida() {
   async function lerPeso() {
     if (!orderActive) return alert('Informe a Nº comanda primeiro.')
     if (!pesoItemId) return alert('Selecione um item por peso.')
+    if (!renewOrderLock(orderId!, stationNs || 'local')) {
+      return alert('Perdemos o lock desta comanda. Reabra a comanda para continuar.')
+    }
     try {
       const g = await requestWeight()
-      const kg = Math.max(0, num(g) / 1000)
+      const kg = Math.max(0, Number(g) / 1000)
       setCart((c) => c.map((x) => (x.id === pesoItemId ? { ...x, qty: kg } : x)))
     } catch {
       const manual = prompt('Balança indisponível. Informe o peso (kg):', '0.000')
       if (!manual) return
-      const kg = Math.max(0, num(manual.toString().replace(',', '.')))
+      const kg = Math.max(0, Number(manual.toString().replace(',', '.')))
       setCart((c) => c.map((x) => (x.id === pesoItemId ? { ...x, qty: kg } : x)))
     }
   }
@@ -271,25 +344,12 @@ export default function VendaRapida() {
   function goToCheckout() {
     if (!orderActive) return alert('Informe a Nº comanda.')
     if (!cart.length) return alert('Carrinho vazio.')
+    renewOrderLock(orderId!, stationNs || 'local')
     nav('/finalizacao', { state: { cart, orderId } })
   }
 
-  /** Próximo cliente (BALANÇA): salva rascunho da comanda e limpa a UI.
-   *  NÃO apaga o rascunho salvo.
-   */
-  function nextClient() {
-    if (!orderActive) return
-    saveCartDraft(orderId!, cart) // garante persistência
-    // limpa somente a estação da balança
-    setCart([])
-    setPesoItemId(null)
-    setQuickQty('0')
-    clearCurrentOrderId()
-    setOrderId(null)
-  }
-
   // ---------------------- UI ----------------------
-  const isBalanca = user?.role === 'BALANÇA A' || user?.role === 'BALANÇA B'
+  const isBalanca = isBalancaRole
 
   return (
     <div className="container">
@@ -309,7 +369,7 @@ export default function VendaRapida() {
         >
           <span style={{ fontSize: '24px' }}>⚖️</span>
           <div>
-            <strong>Modo Balança ({user.role})</strong>
+            <strong>Modo Balança ({roleRaw})</strong>
             <p style={{ margin: '4px 0 0 0', fontSize: '14px', opacity: 0.8 }}>
               1. Informe o número da comanda (1-200) • 2. Adicione produtos por peso • 3. A
               finalização será feita no caixa
@@ -340,6 +400,29 @@ export default function VendaRapida() {
                   <div className="pill small success">
                     Comanda ativa: <b>{orderId}</b>
                   </div>
+                  <span
+                    aria-label="Estado do lock"
+                    title={
+                      lockOwner == null
+                        ? 'Sem lock ativo'
+                        : lockOwner === (stationNs || 'local')
+                          ? `Você detém o lock • expira em ~${lockSeconds}s`
+                          : `Outra estação detém o lock • expira em ~${lockSeconds}s`
+                    }
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      marginLeft: 4,
+                      fontSize: 18,
+                      color: lockOwner == null
+                        ? '#9ca3af' /* cinza */
+                        : lockOwner === (stationNs || 'local')
+                          ? '#16a34a' /* verde */
+                          : '#f59e0b' /* amarelo */
+                    }}
+                  >
+                    🔒
+                  </span>
                   <button onClick={clearOrder} title="Limpar comanda atual">
                     Limpar
                   </button>
@@ -386,10 +469,10 @@ export default function VendaRapida() {
           <div className="grid grid-3">
             {filtered.map((p) => {
               const weight = isByWeight(p)
-              const price = num((p as any)?.price)
+              const price = num(p.price)
               return (
                 <article key={p.id} className="product">
-                  <div className="product-title">{(p as any)?.name ?? 'Item'}</div>
+                  <div className="product-title">{p.name ?? 'Item'}</div>
                   <div className="product-price">
                     {weight ? <span>R$ {fmt(price)} / kg</span> : <span>R$ {fmt(price)}</span>}
                   </div>

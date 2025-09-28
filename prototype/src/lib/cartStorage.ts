@@ -13,6 +13,38 @@ export type CartItem = {
 
 const PREFIX = "pdv.cart.v1."
 const CURRENT_KEY = "pdv.currentOrderId.v1"
+const LOCK_PREFIX = "pdv.orderlock.v1."
+const ENV = (import.meta as unknown as { env?: Record<string, string | undefined> }).env || {}
+const DEFAULT_LOCK_TTL_MS = Number(ENV.VITE_LOCK_TTL_MS) || 15000 // 15s padrão
+const DEFAULT_LOCK_HEARTBEAT_MS = Number(ENV.VITE_LOCK_HEARTBEAT_MS) || 10000 // 10s padrão
+
+function readNumberLS(key: string): number | null {
+  try {
+    const raw = localStorage.getItem(key)
+    if (raw == null) return null
+    const n = Number(raw)
+    return Number.isFinite(n) && n > 0 ? n : null
+  } catch {
+    return null
+  }
+}
+
+function getTTL(): number {
+  return readNumberLS('pdv.lock.ttlMs') ?? DEFAULT_LOCK_TTL_MS
+}
+function getHeartbeat(): number {
+  return readNumberLS('pdv.lock.heartbeatMs') ?? DEFAULT_LOCK_HEARTBEAT_MS
+}
+
+function currentKey(ns?: string): string {
+  return ns ? `${CURRENT_KEY}.${ns}` : CURRENT_KEY
+}
+
+function lockKey(orderId: number): string {
+  return `${LOCK_PREFIX}${orderId}`
+}
+
+type OrderLock = { owner: string; ts: number }
 
 /** Salva o rascunho de uma comanda específica. */
 export function saveCartDraft(orderId: number, items: CartItem[]): void {
@@ -56,26 +88,110 @@ export function listDraftOrders(): number[] {
 }
 
 /** Guarda a comanda "ativa" nesta estação. */
-export function setCurrentOrderId(orderId: number): void {
+export function setCurrentOrderId(orderId: number, ns?: string): void {
   if (!Number.isFinite(orderId)) return
   if (orderId < 1 || orderId > 200) {
     // ignora valores fora do intervalo válido
-    try { localStorage.removeItem(CURRENT_KEY) } catch {}
+  try { localStorage.removeItem(currentKey(ns)) } catch (err) { void err }
     return
   }
-  localStorage.setItem(CURRENT_KEY, String(orderId))
+  localStorage.setItem(currentKey(ns), String(orderId))
 }
 
-export function getCurrentOrderId(): number | null {
-  const raw = localStorage.getItem(CURRENT_KEY)
+export function getCurrentOrderId(ns?: string): number | null {
+  const raw = localStorage.getItem(currentKey(ns))
   const n = Number(raw)
   if (!Number.isFinite(n) || n < 1 || n > 200) {
-    try { localStorage.removeItem(CURRENT_KEY) } catch {}
+  try { localStorage.removeItem(currentKey(ns)) } catch (err) { void err }
     return null
   }
   return n
 }
 
-export function clearCurrentOrderId(): void {
-  localStorage.removeItem(CURRENT_KEY)
+export function clearCurrentOrderId(ns?: string): void {
+  localStorage.removeItem(currentKey(ns))
+}
+
+/** Obtém informações do lock da comanda (se existir e não expirado). */
+export function getOrderLockInfo(orderId: number): OrderLock | null {
+  if (!Number.isFinite(orderId)) return null
+  const raw = localStorage.getItem(lockKey(orderId))
+  if (!raw) return null
+  try {
+    const obj = JSON.parse(raw) as OrderLock
+    if (!obj?.owner || !obj?.ts) return null
+    const age = Date.now() - Number(obj.ts)
+    if (age > getTTL()) return null
+    return obj
+  } catch (err) {
+    void err
+    return null
+  }
+}
+
+/** Tenta adquirir o lock desta comanda para um determinado owner (ex.: u:<id>). */
+export function acquireOrderLock(orderId: number, owner: string): boolean {
+  if (!Number.isFinite(orderId) || !owner) return false
+  const k = lockKey(orderId)
+  try {
+    const existing = getOrderLockInfo(orderId)
+    if (existing && existing.owner !== owner) return false
+    const payload: OrderLock = { owner, ts: Date.now() }
+    localStorage.setItem(k, JSON.stringify(payload))
+    return true
+  } catch (err) {
+    void err
+    return false
+  }
+}
+
+/** Renova o lock (batimento). Se expirado ou já nosso, regrava. */
+export function renewOrderLock(orderId: number, owner: string): boolean {
+  if (!Number.isFinite(orderId) || !owner) return false
+  const existing = getOrderLockInfo(orderId)
+  if (existing && existing.owner !== owner) return false
+  try {
+    localStorage.setItem(lockKey(orderId), JSON.stringify({ owner, ts: Date.now() }))
+    return true
+  } catch (err) {
+    void err
+    return false
+  }
+}
+
+/** Libera o lock se o owner for o atual ou se estiver expirado. */
+export function releaseOrderLock(orderId: number, owner: string): void {
+  if (!Number.isFinite(orderId) || !owner) return
+  try {
+    const raw = localStorage.getItem(lockKey(orderId))
+    if (!raw) return
+    const obj = JSON.parse(raw) as OrderLock
+    const expired = Date.now() - Number(obj?.ts) > getTTL()
+    if (expired || obj?.owner === owner) {
+      localStorage.removeItem(lockKey(orderId))
+    }
+  } catch (err) {
+    void err
+  }
+}
+
+export function isOrderLockedByOther(orderId: number, owner: string): boolean {
+  const info = getOrderLockInfo(orderId)
+  return !!(info && info.owner !== owner)
+}
+
+export function getLockTimings() {
+  return { ttlMs: getTTL(), heartbeatMs: getHeartbeat() }
+}
+
+export function setLockTimings(values: { ttlMs?: number | null; heartbeatMs?: number | null }) {
+  const { ttlMs, heartbeatMs } = values
+  try {
+    if (ttlMs && Number.isFinite(ttlMs) && ttlMs > 0) localStorage.setItem('pdv.lock.ttlMs', String(ttlMs))
+    else if (ttlMs === null) localStorage.removeItem('pdv.lock.ttlMs')
+  } catch (err) { void err }
+  try {
+    if (heartbeatMs && Number.isFinite(heartbeatMs) && heartbeatMs > 0) localStorage.setItem('pdv.lock.heartbeatMs', String(heartbeatMs))
+    else if (heartbeatMs === null) localStorage.removeItem('pdv.lock.heartbeatMs')
+  } catch (err) { void err }
 }

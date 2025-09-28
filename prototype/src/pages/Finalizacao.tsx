@@ -3,17 +3,17 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import { useSession } from '../auth/session'
-import { loadCartDraft, saveCartDraft, removeCartDraft, clearCurrentOrderId, type CartItem } from '../lib/cartStorage'
+import { loadCartDraft, saveCartDraft, removeCartDraft, clearCurrentOrderId, type CartItem, acquireOrderLock, isOrderLockedByOther, renewOrderLock, releaseOrderLock, getOrderLockInfo, getLockTimings } from '../lib/cartStorage'
 import { printText } from '../mock/devices'
 import { addSale } from '../db/sales'
 
 type DocType = 'NAO_FISCAL' | 'NFCE'
 
-const toNumber = (v: any, fallback = 0) => {
-  const n = Number(v)
+const toNumber = (v: unknown, fallback = 0) => {
+  const n = typeof v === 'number' ? v : Number(v as number | string)
   return Number.isFinite(n) ? n : fallback
 }
-const money = (v: any) => toNumber(v).toFixed(2)
+const money = (v: unknown) => toNumber(v).toFixed(2)
 
 /** Tenta extrair uma comanda de uma leitura de leitor/código */
 function parseOrderFromScan(val: string): number | null {
@@ -29,32 +29,34 @@ function parseOrderFromScan(val: string): number | null {
 
 export default function Finalizacao() {
   const nav = useNavigate()
-  const { state } = useLocation() as any
+  type FinalizacaoNavState = {
+    orderId: number
+    cart: CartItem[]
+    doc?: DocType
+    idFiscal?: string
+    cash?: number
+    tef?: number
+  }
+  const { state } = useLocation() as { state?: Partial<FinalizacaoNavState> }
 
   const { user } = useSession()
+  const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine)
+  useEffect(() => {
+    const on = () => setIsOnline(true)
+    const off = () => setIsOnline(false)
+    window.addEventListener('online', on)
+    window.addEventListener('offline', off)
+    return () => {
+      window.removeEventListener('online', on)
+      window.removeEventListener('offline', off)
+    }
+  }, [])
   const roleRaw = (user?.role ?? 'CAIXA') as string
   const role = roleRaw
     .normalize('NFD')
     .replace(/\p{Diacritic}/gu, '')
     .toUpperCase() // BALANÇA→BALANCA
-
-  // Bloqueio: balança não finaliza
-  if (role === 'BALANCA') {
-    return (
-      <div className="container">
-        <h2>Finalização</h2>
-        <div className="card">
-          <h3 className="card-title">Acesso restrito</h3>
-          <p className="muted">
-            O perfil <b>Balança</b> não possui permissão para finalizar comandas.
-          </p>
-          <button onClick={() => nav('/venda')} className="btn">
-            Voltar
-          </button>
-        </div>
-      </div>
-    )
-  }
+  const isBalancaRole = role.startsWith('BALANCA')
 
   // estado inicial
   const [orderIdInput, setOrderIdInput] = useState<string>(
@@ -62,6 +64,11 @@ export default function Finalizacao() {
   )
   const [orderId, setOrderId] = useState<number | null>(state?.orderId ?? null)
   const [cart, setCart] = useState<CartItem[]>(Array.isArray(state?.cart) ? state.cart : [])
+  const [lockOwner, setLockOwner] = useState<'me' | 'other' | null>(null)
+  const [lockSeconds, setLockSeconds] = useState<number>(0)
+
+  // Dono do lock por estação/usuário
+  const owner = useMemo(() => (user?.id ? `u:${user.id}` : 'local'), [user?.id])
 
   const [doc, setDoc] = useState<DocType>('NAO_FISCAL')
   const [idFiscal, setIdFiscal] = useState<string>('') // CPF/CNPJ opcional
@@ -83,11 +90,27 @@ export default function Finalizacao() {
   )
   const falta = useMemo(() => Math.max(0, total - pagos), [total, pagos])
 
+  // (não retornar aqui para não quebrar a ordem dos hooks)
+
   // Carregar por comanda/leitor
   async function loadByOrder() {
     const parsed = parseOrderFromScan(orderIdInput)
     if (parsed == null) {
       alert('Informe/escaneie um Nº de comanda válido (1–200).')
+      return
+    }
+    // Lock: não permite abrir se outra estação segura o lock
+    if (isOrderLockedByOther(parsed, owner)) {
+      alert(`Comanda ${parsed} está sendo editada em outra estação.`)
+      return
+    }
+    // Se já havia uma comanda ativa, libera o lock anterior
+    if (orderId != null) {
+      try { releaseOrderLock(orderId, owner) } catch (err) { void err }
+    }
+    // Adquire lock para a nova comanda
+    if (!acquireOrderLock(parsed, owner)) {
+      alert(`Não foi possível adquirir o lock da comanda ${parsed}.`)
       return
     }
     const draft = loadCartDraft(parsed) || []
@@ -101,7 +124,7 @@ export default function Finalizacao() {
 
   // Atalhos
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
+  const onKey = (e: KeyboardEvent) => {
       if (e.key === 'F6') {
         e.preventDefault()
         set100('cash')
@@ -114,7 +137,7 @@ export default function Finalizacao() {
         e.preventDefault()
         set100('tef')
       }
-      const isEnter = e.key === 'Enter' || (e as any).code === 'Enter' || (e as any).code === 'NumpadEnter'
+      const isEnter = e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter'
       if ((e.ctrlKey || e.metaKey) && isEnter) {
         e.preventDefault()
         confirmar()
@@ -137,6 +160,33 @@ export default function Finalizacao() {
   useEffect(() => {
     if (orderId != null) saveCartDraft(orderId, cart)
   }, [cart, orderId])
+
+  // Mantém lock renovado enquanto a tela estiver com a comanda ativa
+  useEffect(() => {
+    if (orderId == null) return
+    const id = setInterval(() => {
+      try { renewOrderLock(orderId, owner) } catch (err) { void err }
+    }, 10000) // 10s
+    return () => clearInterval(id)
+  }, [orderId, owner])
+
+  // Indicador de lock
+  useEffect(() => {
+    if (orderId == null) { setLockOwner(null); setLockSeconds(0); return }
+    const tick = () => {
+      try {
+        const info = getOrderLockInfo(orderId)
+        if (!info) { setLockOwner(null); setLockSeconds(0); return }
+        const ttl = getLockTimings().ttlMs
+        const age = Date.now() - Number(info.ts)
+        setLockSeconds(Math.max(0, Math.ceil((ttl - age) / 1000)))
+        setLockOwner(info.owner === owner ? 'me' : 'other')
+      } catch (err) { void err }
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [orderId, owner])
 
   // Edição de itens
   const canEditPrice = role === 'GERENTE' || role === 'ADMIN'
@@ -190,6 +240,7 @@ export default function Finalizacao() {
 
     // PIX → vai para a tela dedicada
     if (toNumber(vPix) > 0) {
+      try { renewOrderLock(orderId, owner) } catch (err) { void err }
       nav('/pix', {
         state: {
           orderId,
@@ -231,28 +282,54 @@ export default function Finalizacao() {
       )
       
   removeCartDraft(orderId)
-  try { clearCurrentOrderId() } catch {}
+  try { clearCurrentOrderId(owner) } catch (err) { void err }
+    try { releaseOrderLock(orderId, owner) } catch (err) { void err }
       alert('Pagamento confirmado! Comanda encerrada e registrada no sistema.')
       nav('/relatorioxz')
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Erro ao salvar venda:', error)
-      const msg = error?.message || 'Erro ao registrar venda. Tente novamente.'
+      const msg = (error as Error | undefined)?.message || 'Erro ao registrar venda. Tente novamente.'
       alert(msg)
       return
     }
   }
 
   const handleKeyDown: React.KeyboardEventHandler<HTMLDivElement> = (e) => {
-    const isEnter = e.key === 'Enter' || (e as any).code === 'Enter' || (e as any).code === 'NumpadEnter'
-    if ((e.ctrlKey || (e as any).metaKey) && isEnter) {
+    const isEnter = e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter'
+    if ((e.ctrlKey || e.metaKey) && isEnter) {
       e.preventDefault()
       confirmar()
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      if (orderId != null) {
+        try { releaseOrderLock(orderId, owner) } catch (err) { void err }
+      }
+      nav('/venda')
     }
   }
 
   return (
     <div className="container" onKeyDown={handleKeyDown}>
       <h2>Finalização</h2>
+
+      {/* Indicador de conectividade */}
+      <div className="pill" style={{ marginBottom: 8, background: isOnline ? '#e8f5e9' : '#ffebee', border: `1px solid ${isOnline ? '#a5d6a7' : '#ef9a9a'}` }}>
+        {isOnline ? 'Conectado à internet' : 'Sem internet — modo offline'}
+      </div>
+
+      {isBalancaRole ? (
+        <div className="card">
+          <h3 className="card-title">Acesso restrito</h3>
+          <p className="muted">
+            O perfil <b>Balança</b> não possui permissão para finalizar comandas.
+          </p>
+          <button onClick={() => nav('/venda')} className="btn">
+            Voltar
+          </button>
+        </div>
+      ) : (
+        <>
 
       {/* Campo único: Nº comanda / leitor */}
       {!orderId && (
@@ -272,7 +349,10 @@ export default function Finalizacao() {
             <button className="btn btn-primary" onClick={loadByOrder}>
               Buscar
             </button>
-            <button onClick={() => nav('/venda')} className="btn">
+            <button onClick={() => {
+              if (orderId != null) { try { releaseOrderLock(orderId, owner) } catch (err) { void err } }
+              nav('/venda')
+            }} className="btn">
               Voltar
             </button>
           </div>
@@ -285,9 +365,30 @@ export default function Finalizacao() {
 
       {orderId != null && (
         <>
-          <div className="pill small">
-            Comanda <b>#{orderId}</b>
-          </div>
+          <div className="pill small">Comanda <b>#{orderId}</b></div>
+          <span
+            aria-label="Estado do lock"
+            title={
+              lockOwner == null
+                ? 'Sem lock ativo'
+                : lockOwner === 'me'
+                  ? `Você detém o lock • expira em ~${lockSeconds}s`
+                  : `Outra estação detém o lock • expira em ~${lockSeconds}s`
+            }
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              marginLeft: 4,
+              fontSize: 18,
+              color: lockOwner == null
+                ? '#9ca3af'
+                : lockOwner === 'me'
+                  ? '#16a34a'
+                  : '#f59e0b'
+            }}
+          >
+            🔒
+          </span>
 
           <div className="card" style={{ marginTop: 12 }}>
             <h3 className="card-title">Itens</h3>
@@ -364,10 +465,12 @@ export default function Finalizacao() {
               </button>
               <button
                 className={`pill ${doc === 'NFCE' ? 'active' : ''}`}
-                onClick={() => setDoc('NFCE')}
+                onClick={() => isOnline && setDoc('NFCE')}
                 title="F3"
+                disabled={!isOnline}
+                style={!isOnline ? { opacity: .6, cursor: 'not-allowed' } : undefined}
               >
-                Fiscal (NFC-e)
+                Fiscal (NFC-e) {isOnline ? '' : '— indisponível offline'}
               </button>
             </div>
             <div className="row" style={{ gap: 8 }}>
@@ -462,6 +565,8 @@ export default function Finalizacao() {
           <p className="muted small" style={{ marginTop: 4 }}>
             Dica: atalho de teclado — Ctrl+Enter (Windows/Linux) ou ⌘+Enter (macOS) para confirmar.
           </p>
+        </>
+      )}
         </>
       )}
     </div>

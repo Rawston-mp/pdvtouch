@@ -1,70 +1,56 @@
-# React + TypeScript + Vite
+## PDVTouch (Protótipo)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+App React + Vite com suporte a PWA, operação offline e mock de dispositivos (balança/impressora via WebSocket).
 
-Currently, two official plugins are available:
+### Requisitos
+- Node 18+
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+### Scripts
+- `npm run dev`: inicia o app (http://localhost:5173)
+- `npm run mock:ws`: inicia o servidor WebSocket mock (ws://localhost:8787)
+- `npm run dev:all`: inicia app + WS (requer concurrently)
+- `npm run build` / `npm run preview`: build de produção e pré-visualização
 
-## Expanding the ESLint configuration
+### Variáveis de ambiente
+Crie `.env.local` (ou use `.env.example` como base):
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+```
+VITE_API_PREFIX=/api/
+# ou backend externo:
+# VITE_API_ORIGIN=https://api.suaempresa.com
+# VITE_API_PREFIX=/v1/
 
-```js
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+VITE_WS_HOST=localhost
+VITE_WS_PORT=8787
 
-      // Remove tseslint.configs.recommended and replace with this
-      ...tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      ...tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      ...tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+VITE_LOCK_TTL_MS=15000
+VITE_LOCK_HEARTBEAT_MS=10000
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+As variáveis acima ajustam:
+- Cache de API no Service Worker (NetworkFirst)
+- Host/porta do WS mock de dispositivos
+- Timings dos locks de comanda (TTL e heartbeat)
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+### PWA
+- Ícones maskable (placeholders): `public/icons/icon-192.png`, `public/icons/icon-512.png` — substitua por ícones oficiais.
+- Manifest+Workbox já configurados (autoUpdate). Fallback offline: `public/offline.html`.
+- iOS: apple-touch-icon e metatags de status bar já incluídas.
 
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-as
+Instalação do app (PWA):
+- Apenas ADMIN verá o botão “Instalar app” na topbar quando o navegador permitir.
+- Ao publicar nova versão, aparecerá um toast “Nova versão disponível” com botão “Atualizar”.
+
+### Operação offline
+- Telas principais funcionam offline (IndexedDB via Dexie).
+- Recursos dependentes da rede (ex.: NFC-e, confirmação de PIX) são indicados e desativados offline.
+- Fallback de navegação: `offline.html`.
+
+### Locks de comanda
+- Locks locais com TTL/heartbeat; indicador minimalista de lock nas telas de Venda/Finalização.
+- Ajuste de tempos em Configurações.
+
+### Mock de dispositivos
+- WS configurável via env (VITE_WS_HOST/VITE_WS_PORT).
+- `src/mock/devices.ts` lida com conexão, impressão e leitura de peso.
+

@@ -1,4 +1,8 @@
 let socket: WebSocket | null = null
+const ENV = (import.meta as unknown as { env?: Record<string, string | undefined> }).env || {}
+const WS_HOST = ENV.VITE_WS_HOST || 'localhost'
+const WS_PORT = Number(ENV.VITE_WS_PORT) || 8787
+const WS_URL = `ws://${WS_HOST}:${WS_PORT}`
 
 // Garante conexão com o servidor WS mock
 export function connectDevices() {
@@ -9,12 +13,12 @@ export function connectDevices() {
 
   // Se existir uma conexão antiga encerrando/encerrada, fecha por segurança
   if (socket && (socket.readyState === WebSocket.CLOSING || socket.readyState === WebSocket.CLOSED)) {
-    try { socket.close() } catch {}
+    try { socket.close() } catch (err) { void err }
   }
 
-  socket = new WebSocket('ws://localhost:8787')
+  socket = new WebSocket(WS_URL)
 
-  socket.onopen = () => console.log('[WS] Conectado ao mock')
+  socket.onopen = () => console.log('[WS] Conectado ao mock', WS_URL)
   socket.onclose = () => console.log('[WS] Conexão encerrada')
   socket.onerror = (err) => console.error('[WS] Erro', err)
 
@@ -28,9 +32,9 @@ export function getCurrentSocket(): WebSocket | null {
 export function reconnectDevices(): WebSocket | null {
   try {
     if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
-      try { socket.close() } catch {}
+      try { socket.close() } catch (err) { void err }
     }
-  } catch {}
+  } catch (err) { void err }
   socket = null
   return connectDevices()
 }
@@ -75,26 +79,30 @@ async function waitForOpen(ws: WebSocket, timeoutMs = 1500): Promise<WebSocket> 
 
 // Solicita peso da balança
 export function requestWeight(): Promise<number> {
-  return new Promise(async (resolve, reject) => {
+  return new Promise((resolve, reject) => {
     let ws = connectDevices()
     if (!ws) return reject('WebSocket não disponível')
 
     try {
-      ws = await waitForOpen(ws)
+      // aguarda abertura
+      waitForOpen(ws).then((w) => { ws = w }).catch((e) => {
+        reject(e)
+      })
     } catch (e) {
-      return reject(e)
+      return reject(e as unknown as Error)
     }
 
     const onMsg = (ev: MessageEvent) => {
       try {
-        const data = JSON.parse((ev as any).data)
+        const raw = (ev as unknown as { data?: string }).data || ''
+        const data = JSON.parse(String(raw))
         if (data.type === 'WEIGHT') {
           cleanup()
           resolve(Number(data.kg))
         }
       } catch (e) {
         cleanup()
-        reject(e)
+        reject(e as unknown as Error)
       }
     }
 
@@ -116,7 +124,7 @@ export function requestWeight(): Promise<number> {
       ws.send(JSON.stringify({ type: 'GET_WEIGHT' }))
     } catch (e) {
       cleanup()
-      return reject(e)
+      return reject(e as unknown as Error)
     }
 
     // timeout de 3s
@@ -132,12 +140,12 @@ export function printText(id: string, text: string) {
   const ws = connectDevices()
   if (!ws) return
   if (ws.readyState === WebSocket.OPEN) {
-    try { ws.send(JSON.stringify({ type: 'PRINT', payload: { id, text } })) } catch {}
+    try { ws.send(JSON.stringify({ type: 'PRINT', payload: { id, text } })) } catch (err) { void err }
     return
   }
   // Se ainda conectando, envia após abrir
   waitForOpen(ws).then((sock) => {
-    try { sock.send(JSON.stringify({ type: 'PRINT', payload: { id, text } })) } catch {}
+  try { sock.send(JSON.stringify({ type: 'PRINT', payload: { id, text } })) } catch (err) { void err }
   }).catch((e) => {
     console.warn('[WS] Não foi possível imprimir (sem conexão):', e)
   })

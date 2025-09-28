@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview --host",
     "mock:ws": "node mock/ws-server.mjs",
     "dev:all": "concurrently -n WEB,WS -c auto \"npm run dev\" \"npm run mock:ws\"",
     "type-check": "tsc --noEmit -p tsconfig.json"
@@ -35,6 +37,7 @@
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.39.1",
     "vite": "^7.1.2",
+    "vite-plugin-pwa": "^1.0.3",
     "ws": "^8.18.3"
   }
 }

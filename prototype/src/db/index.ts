@@ -107,9 +107,9 @@ export async function ensureDbOpen() {
     if (!db.isOpen()) {
       await db.open()
     }
-  } catch (err) {
+  } catch (err: unknown) {
     // Repassa com mensagem mais clara
-    const e = err as any
+    const e = err as { name?: string }
     if (e?.name === 'UpgradeBlockedError') {
       throw new Error('Atualização do banco bloqueada. Feche outras abas/janelas do app e recarregue.')
     }
@@ -254,6 +254,42 @@ async function seedUsers(d: PDVDB) {
   )
 }
 
+// Garantia suave: assegura que as balanças existam, estejam ativas e com PINs padrão
+async function ensureBalancaUsers(d: PDVDB) {
+  const targets: Array<{ name: string; role: Role; pin: string }> = [
+    { name: 'Balança A', role: 'BALANÇA A', pin: '2222' },
+    { name: 'Balança B', role: 'BALANÇA B', pin: '2233' },
+  ]
+  for (const t of targets) {
+    const expectedHash = await hashPin(t.pin)
+    // Busca por role (indexado)
+  const u = await d.users.where('role').equals(t.role).first()
+    if (!u) {
+      // criar
+      await d.users.put({
+        id: crypto.randomUUID(),
+        name: t.name,
+        role: t.role,
+        active: true,
+        pinHash: expectedHash,
+      })
+      console.log(`✅ [initDb] Criado usuário padrão: ${t.name} (${t.pin})`)
+    } else {
+      // atualizar se necessário
+      const patch: Partial<User> = {}
+      if (u.name !== t.name) patch.name = t.name
+      if (!u.active) patch.active = true
+      if (u.pinHash !== expectedHash) patch.pinHash = expectedHash
+      if (Object.keys(patch).length > 0) {
+        await d.users.update(u.id, patch)
+        console.log(`🔧 [initDb] Ajustado usuário ${u.name}: ${
+          patch.pinHash ? 'PIN atualizado' : ''
+        }${patch.active ? ' • reativado' : ''}${patch.name ? ' • nome ajustado' : ''}`)
+      }
+    }
+  }
+}
+
 // Init idempotente
 export async function initDb() {
   await db.open()
@@ -268,6 +304,13 @@ export async function initDb() {
   } else if (userCount === 0) {
     console.log('🔄 Criando usuários padrão...')
     await seedUsers(db)
+  }
+
+  // Garante que as balanças A/B estejam utilizáveis com PINs conhecidos
+  try {
+    await ensureBalancaUsers(db)
+  } catch (e) {
+    console.warn('⚠️ Não foi possível assegurar usuários de Balança A/B:', e)
   }
 
   console.log(`✅ Banco inicializado. Usuários: ${await db.users.count()}`)
