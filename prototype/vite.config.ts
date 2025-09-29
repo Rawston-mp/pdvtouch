@@ -7,6 +7,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '', '')
   const API_ORIGIN = env.VITE_API_ORIGIN || '' // ex.: https://api.suaempresa.com
   const API_PREFIX = env.VITE_API_PREFIX || '/api/' // ex.: /v1/
+  const VERSION = ((globalThis as unknown as { process?: { env?: Record<string, string> } }).process?.env?.npm_package_version) || String(Date.now())
 
   // Gera um padrão de cache para API de acordo com env
   const apiPattern: RegExp | ((args: { url: URL }) => boolean) = API_ORIGIN
@@ -42,30 +43,46 @@ export default defineConfig(({ mode }) => {
         ]
       },
       workbox: {
+        navigationPreload: true,
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        additionalManifestEntries: [
+          { url: '/venda', revision: VERSION },
+          { url: '/finalizacao', revision: VERSION },
+          { url: '/pix', revision: VERSION },
+        ],
         runtimeCaching: [
+          // Páginas (navegações): prioriza rede, cai para cache em offline
           {
-            urlPattern: ({ url }) => url.origin === self.location.origin,
-            handler: 'StaleWhileRevalidate',
-            options: { cacheName: 'app-shell' }
-          },
-           {
-            urlPattern: apiPattern,
-             handler: 'NetworkFirst',
-             options: { cacheName: 'api', expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 } }
-           },
-           {
-             urlPattern: /\.(?:png|jpg|jpeg|gif|svg|webp)$/i,
-             handler: 'StaleWhileRevalidate',
-             options: { cacheName: 'images', expiration: { maxEntries: 200, maxAgeSeconds: 7 * 24 * 60 * 60 } }
-           },
-          {
-            urlPattern: ({ url }) => url.protocol === 'http:' || url.protocol === 'https:',
+            urlPattern: ({ request }) => request.mode === 'navigate',
             handler: 'NetworkFirst',
-            options: { cacheName: 'runtime' }
+            options: {
+              cacheName: 'pages',
+              networkTimeoutSeconds: 3,
+              expiration: { maxEntries: 50, maxAgeSeconds: 24 * 60 * 60 },
+            }
+          },
+          // Assets do app (JS/CSS/etc.)
+          {
+            urlPattern: ({ url }) => url.origin === self.location.origin && /\.(?:js|css|html)$/.test(url.pathname),
+            handler: 'StaleWhileRevalidate',
+            options: { cacheName: 'assets' }
+          },
+          // API (configurável por env)
+          {
+            urlPattern: apiPattern,
+            handler: 'NetworkFirst',
+            options: { cacheName: 'api', expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 } }
+          },
+          // Imagens
+          {
+            urlPattern: /\.(?:png|jpg|jpeg|gif|svg|webp)$/i,
+            handler: 'StaleWhileRevalidate',
+            options: { cacheName: 'images', expiration: { maxEntries: 200, maxAgeSeconds: 7 * 24 * 60 * 60 } }
           }
         ],
-        navigateFallback: '/offline.html'
+        // SPA fallback para index.html; offline.html continua disponível manualmente
+        navigateFallback: '/index.html',
+        navigateFallbackDenylist: [ new RegExp('^/api/') ],
       }
     })
   ],
