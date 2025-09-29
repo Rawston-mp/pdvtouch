@@ -26,6 +26,7 @@ function Layout() {
   const { user, signOut } = useSession()
   const [deferredPrompt, setDeferredPrompt] = React.useState<BeforeInstallPromptEvent | null>(null)
   const [swUpdate, setSwUpdate] = React.useState<boolean>(false)
+  const [isStandalone, setIsStandalone] = React.useState<boolean>(false)
 
   function sair() {
     try {
@@ -56,6 +57,22 @@ function Layout() {
     return () => window.removeEventListener('beforeinstallprompt', onBeforeInstall)
   }, [])
 
+  // Detecta se o app já está em standalone (instalado)
+  React.useEffect(() => {
+    const check = () => {
+      const standalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as unknown as { standalone?: boolean }).standalone === true
+      setIsStandalone(!!standalone)
+    }
+    check()
+    const onChange = () => check()
+    window.matchMedia('(display-mode: standalone)').addEventListener?.('change', onChange)
+    window.addEventListener('appinstalled', check)
+    return () => {
+      window.matchMedia('(display-mode: standalone)').removeEventListener?.('change', onChange)
+      window.removeEventListener('appinstalled', check)
+    }
+  }, [])
+
   // Detecta atualização do SW: mostra toast e botão de atualizar
   React.useEffect(() => {
     if (!('serviceWorker' in navigator)) return
@@ -74,9 +91,33 @@ function Layout() {
   }, [])
 
   function onInstallClick() {
-    if (!deferredPrompt) return
-    deferredPrompt.prompt()
-    deferredPrompt.userChoice.finally(() => setDeferredPrompt(null))
+    if (deferredPrompt) {
+      deferredPrompt.prompt()
+      deferredPrompt.userChoice.finally(() => setDeferredPrompt(null))
+      return
+    }
+    // Fallback DEV: instruções manuais por plataforma
+    if (import.meta.env.DEV) {
+      const ua = navigator.userAgent || ''
+      const isIOS = /iPad|iPhone|iPod/.test(ua)
+      const isAndroid = /Android/.test(ua)
+      const isChrome = /Chrome\//.test(ua)
+      const isEdge = /Edg\//.test(ua)
+      const isSafari = /Safari\//.test(ua) && !isChrome && !isEdge
+      let msg = 'Para instalar:\n\n'
+      if (isIOS) {
+        msg += '- Abra no Safari > botão Compartilhar > Adicionar à Tela de Início.'
+      } else if (isAndroid && isChrome) {
+        msg += '- Toque no menu ⋮ do Chrome > Instalar aplicativo (ou Adicionar à tela inicial).'
+      } else if (isChrome || isEdge) {
+        msg += '- Clique no ícone de instalar na barra de endereço ou em Mais > Instalar PDVTouch.'
+      } else if (isSafari) {
+        msg += '- Safari no macOS: Arquivo > Adicionar ao Dock.'
+      } else {
+        msg += '- Procure pela opção de instalar/instalar aplicativo no menu do navegador.'
+      }
+      alert(msg)
+    }
   }
 
   return (
@@ -137,7 +178,7 @@ function Layout() {
           <small style={{ opacity: 0.7 }}>
             {user ? `${user.name} — ${user.role}` : 'Sem sessão'}
           </small>
-          {(user?.role === 'ADMIN') && deferredPrompt && (
+          {(user && (user.role === 'ADMIN' || user.role === 'GERENTE')) && !isStandalone && (deferredPrompt || import.meta.env.DEV) && (
             <button onClick={onInstallClick} style={{ padding: '4px 10px' }}>Instalar app</button>
           )}
           <button onClick={sair} style={{ padding: '4px 10px' }}>
