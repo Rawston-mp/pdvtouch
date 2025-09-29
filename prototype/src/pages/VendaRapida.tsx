@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { listProducts } from '../db/products'
+import { db } from '../db'
 import type { Product } from '../db'
 import { requestWeight, printText } from '../mock/devices'
 import {
@@ -17,9 +18,12 @@ import {
   isOrderLockedByOther,
   getOrderLockInfo,
   getLockTimings,
+  listOrderLocks,
+  listDraftOrders,
   type CartItem,
 } from '../lib/cartStorage'
 import { useSession } from '../auth/session'
+import { listAwaitingReturn, clearUsage } from '../lib/comandaUsage'
 
 type Category = 'Pratos' | 'Bebidas' | 'Sobremesas' | 'Por Peso'
 const CATEGORIES: { key: Category; label: string }[] = [
@@ -76,6 +80,7 @@ export default function VendaRapida() {
   const [cart, setCart] = useState<CartItem[]>([])
   const [quickQty, setQuickQty] = useState<string>('0')
   const [pesoItemId, setPesoItemId] = useState<string | null>(null)
+  const [showLocks, setShowLocks] = useState<boolean>(false)
 
   // comanda
   const [orderId, setOrderId] = useState<number | null>(null)
@@ -203,6 +208,8 @@ export default function VendaRapida() {
           alert(`Não foi possível adquirir o lock da comanda ${n}.`)
           return
         }
+        // A comanda está de volta ao balcão/balança: remove estado de "aguardando devolução"
+        try { clearUsage(n) } catch (err) { void err }
         setOrderId(n)
         setCurrentOrderId(n, stationNs)
 
@@ -341,12 +348,31 @@ export default function VendaRapida() {
   }
 
   // --------------- Fluxos finais ----------------
-  function goToCheckout() {
+  const goToCheckout = React.useCallback(() => {
     if (!orderActive) return alert('Informe a Nº comanda.')
     if (!cart.length) return alert('Carrinho vazio.')
     renewOrderLock(orderId!, stationNs || 'local')
     nav('/finalizacao', { state: { cart, orderId } })
-  }
+  }, [orderActive, cart, orderId, stationNs, nav])
+
+  // Atalho de teclado: F4 para ir à Finalização (somente para perfis com permissão)
+  useEffect(() => {
+    if (!canFinalize) return
+    const onKey = (e: KeyboardEvent) => {
+      // Ignora se foco está em campos de texto ou se alguma tecla modificadora está ativa
+      const target = e.target as HTMLElement | null
+      const tag = (target?.tagName || '').toUpperCase()
+      const isTextInput = tag === 'INPUT' || tag === 'TEXTAREA' || (target as HTMLElement | null)?.isContentEditable
+      if (isTextInput) return
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
+      if (e.key === 'F4') {
+        e.preventDefault()
+        goToCheckout()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [canFinalize, goToCheckout])
 
   // ---------------------- UI ----------------------
   const isBalanca = isBalancaRole
@@ -394,6 +420,7 @@ export default function VendaRapida() {
               <button className="btn btn-primary" onClick={applyUnified}>
                 Aplicar
               </button>
+              <button className="btn" title="Ver comandas abertas" onClick={() => setShowLocks(true)}>Comandas abertas</button>
 
               {orderActive && (
                 <>
@@ -458,6 +485,35 @@ export default function VendaRapida() {
       </div>
 
       <div className="grid grid-2" style={{ alignItems: 'start' }}>
+        {/* Modal de Locks */}
+        {showLocks && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => setShowLocks(false)}>
+            <div className="card" style={{ width: 520, maxWidth: '90%', maxHeight: '80vh', overflow: 'auto' }} onClick={(e) => e.stopPropagation()}>
+              <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ margin: 0 }}>Comandas abertas</h3>
+                <button onClick={() => setShowLocks(false)}>Fechar</button>
+              </div>
+              <div className="hr" />
+              <LocksList stationNs={stationNs} onOpen={(id: number) => {
+                const owner = stationNs || 'local'
+                if (isOrderLockedByOther(id, owner)) {
+                  alert(`Comanda ${id} está sendo editada em outra estação.`)
+                  return
+                }
+                if (!acquireOrderLock(id, owner)) {
+                  alert(`Não foi possível adquirir o lock da comanda ${id}.`)
+                  return
+                }
+                try { clearUsage(id) } catch (err) { void err }
+                setOrderId(id)
+                setCurrentOrderId(id, stationNs)
+                const d = loadCartDraft(id)
+                setCart((d || []).map((x) => ({ ...x, price: num(x.price), qty: num(x.qty) })))
+                setShowLocks(false)
+              }} />
+            </div>
+          </div>
+        )}
         {/* Catálogo */}
         <section className="card">
           <h3 className="card-title">Catálogo</h3>
@@ -656,6 +712,131 @@ export default function VendaRapida() {
           </div>
         </aside>
       </div>
+    </div>
+  )
+}
+
+function LocksList({ stationNs, onOpen }: { stationNs?: string, onOpen: (orderId: number) => void }) {
+  const [locks, setLocks] = React.useState<Array<{ orderId: number; owner: string; ts: number }>>([])
+  const [awaiting, setAwaiting] = React.useState<Array<{ orderId: number; holder?: string; ts: number }>>([])
+  const [drafts, setDrafts] = React.useState<Array<{ orderId: number; items: number }>>([])
+  const [nameMap, setNameMap] = React.useState<Record<string, string>>({})
+  React.useEffect(() => {
+    const load = () => {
+      setLocks(listOrderLocks())
+      setAwaiting(listAwaitingReturn())
+      // Rascunhos sem lock e não aguardando devolução
+      const lockedIds = new Set(listOrderLocks().map((l) => l.orderId))
+      const awaitingIds = new Set(listAwaitingReturn().map((a) => a.orderId))
+      const ds = listDraftOrders()
+        .filter((id) => !lockedIds.has(id) && !awaitingIds.has(id))
+        .map((id) => ({ orderId: id, items: (loadCartDraft(id) || []).length }))
+        .filter((d) => d.items > 0)
+        .sort((a, b) => a.orderId - b.orderId)
+      setDrafts(ds)
+    }
+    load()
+    const id = setInterval(load, 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  // Resolve owners "u:<id>" para nomes amigáveis (User.name — Role)
+  React.useEffect(() => {
+    const unresolved = Array.from(new Set(
+      [
+        ...locks.map((l) => l.owner),
+        ...awaiting.map((a) => a.holder || '')
+      ]
+        .filter(Boolean)
+        .filter((o) => o.startsWith('u:') && !nameMap[o])
+    ))
+    if (unresolved.length === 0) return
+    ;(async () => {
+      const entries: Array<[string, string]> = []
+      for (const key of unresolved) {
+        const id = key.slice(2)
+        try {
+          const u = await db.users.get(id)
+          if (u) entries.push([key, `${u.name} — ${u.role}`])
+        } catch {
+          // ignore
+        }
+      }
+      if (entries.length) {
+        setNameMap((m) => ({ ...m, ...Object.fromEntries(entries) }))
+      }
+    })()
+  }, [locks, awaiting, nameMap])
+
+  const hasAny = locks.length > 0 || awaiting.length > 0 || drafts.length > 0
+  if (!hasAny) return <div className="muted">Nenhuma comanda em uso no momento.</div>
+
+  const fmtTime = (ts: number) => new Date(ts).toLocaleTimeString()
+
+  return (
+    <div style={{ display: 'grid', gap: 12 }}>
+      {locks.length > 0 && (
+        <div>
+          <div className="small muted" style={{ marginBottom: 6 }}>Em edição (locks ativos)</div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            {locks.map((l) => {
+              const isMine = l.owner === (stationNs || 'local')
+              const who = isMine
+                ? 'esta estação'
+                : (l.owner.startsWith('u:') ? (nameMap[l.owner] || `estação ${l.owner}`) : l.owner)
+              return (
+                <div key={`lock-${l.orderId}`} className="row" style={{ justifyContent: 'space-between', borderBottom: '1px solid #f0f0f0', paddingBottom: 6 }}>
+                  <div>
+                    <strong>Comanda {l.orderId}</strong>
+                    <div className="small muted">Atualizado às {fmtTime(l.ts)}</div>
+                  </div>
+                  <div className="small" style={{ opacity: .9 }}>{who}</div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {awaiting.length > 0 && (
+        <div>
+          <div className="small muted" style={{ margin: '6px 0' }}>Aguardando devolução</div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            {awaiting.map((a) => {
+              const who = a.holder?.startsWith('u:') ? (nameMap[a.holder] || a.holder) : (a.holder || '—')
+              return (
+                <div key={`wait-${a.orderId}`} className="row" style={{ justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f0f0f0', paddingBottom: 6 }}>
+                  <div>
+                    <strong>Comanda {a.orderId}</strong>
+                    <div className="small muted">Desde {fmtTime(a.ts)}</div>
+                  </div>
+                  <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+                    <div className="small" style={{ opacity: .9 }}>com {who}</div>
+                    <button className="btn" onClick={() => clearUsage(a.orderId)}>Marcar devolvida</button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {drafts.length > 0 && (
+        <div>
+          <div className="small muted" style={{ margin: '6px 0' }}>Rascunhos (sem lock)</div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            {drafts.map((d) => (
+              <div key={`draft-${d.orderId}`} className="row" style={{ justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f0f0f0', paddingBottom: 6 }}>
+                <div>
+                  <strong>Comanda {d.orderId}</strong>
+                  <div className="small muted">{d.items} item(ns)</div>
+                </div>
+                <button className="btn btn-primary" onClick={() => onOpen(d.orderId)}>Abrir</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

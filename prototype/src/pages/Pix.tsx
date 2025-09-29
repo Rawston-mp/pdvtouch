@@ -8,6 +8,7 @@ import { addSale } from '../db/sales'
 import { removeCartDraft, clearCurrentOrderId, renewOrderLock, releaseOrderLock } from '../lib/cartStorage'
 import { printText } from '../mock/devices'
 import type { CartItem } from '../lib/cartStorage'
+import { markAwaitingReturn } from '../lib/comandaUsage'
 
 type DocType = 'NAO_FISCAL' | 'NFCE'
 type PixNavState = {
@@ -80,6 +81,7 @@ export default function PixPage() {
           status: 'COMPLETED'
         })
         printText('fiscal01', `[MOCK] PIX recebido: R$ ${amount.toFixed(2)} | Total R$ ${total.toFixed(2)}`)
+        try { markAwaitingReturn(orderId, owner) } catch (err) { void err }
   try { if (orderId) removeCartDraft(orderId) } catch (err) { void err }
   try { clearCurrentOrderId(owner) } catch (err) { void err }
         try { if (orderId) releaseOrderLock(orderId, owner) } catch (err) { void err }

@@ -6,6 +6,7 @@ import { useSession } from '../auth/session'
 import { loadCartDraft, saveCartDraft, removeCartDraft, clearCurrentOrderId, type CartItem, acquireOrderLock, isOrderLockedByOther, renewOrderLock, releaseOrderLock, getOrderLockInfo, getLockTimings } from '../lib/cartStorage'
 import { printText } from '../mock/devices'
 import { addSale } from '../db/sales'
+import { markAwaitingReturn } from '../lib/comandaUsage'
 
 type DocType = 'NAO_FISCAL' | 'NFCE'
 
@@ -280,11 +281,13 @@ export default function Finalizacao() {
       printText('fiscal01',
         `[MOCK] Confirmação: R$ ${money(total)} | CASH ${money(vCash)} | TEF ${money(vTef)} | DOC ${doc}${idFiscal ? ' (' + idFiscal + ')' : ''}`
       )
-      
-  removeCartDraft(orderId)
-  try { clearCurrentOrderId(owner) } catch (err) { void err }
-    try { releaseOrderLock(orderId, owner) } catch (err) { void err }
-      alert('Pagamento confirmado! Comanda encerrada e registrada no sistema.')
+      // Marca comanda como aguardando devolução no caixa
+      try { markAwaitingReturn(orderId, owner) } catch (err) { void err }
+
+      removeCartDraft(orderId)
+      try { clearCurrentOrderId(owner) } catch (err) { void err }
+      try { releaseOrderLock(orderId, owner) } catch (err) { void err }
+      alert('Pagamento confirmado! Comanda aguardando devolução no caixa.')
       nav('/relatorioxz')
     } catch (error: unknown) {
       console.error('Erro ao salvar venda:', error)

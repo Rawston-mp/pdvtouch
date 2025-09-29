@@ -195,3 +195,28 @@ export function setLockTimings(values: { ttlMs?: number | null; heartbeatMs?: nu
     else if (heartbeatMs === null) localStorage.removeItem('pdv.lock.heartbeatMs')
   } catch (err) { void err }
 }
+
+/** Lista locks ativos (não expirados) de todas as comandas. */
+export function listOrderLocks(): Array<{ orderId: number; owner: string; ts: number }> {
+  const out: Array<{ orderId: number; owner: string; ts: number }> = []
+  const ttl = getTTL()
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i) || ''
+    if (!k.startsWith(LOCK_PREFIX)) continue
+    const idStr = k.slice(LOCK_PREFIX.length)
+    const id = Number(idStr)
+    if (!Number.isFinite(id)) continue
+    try {
+      const raw = localStorage.getItem(k)
+      if (!raw) continue
+      const obj = JSON.parse(raw) as OrderLock
+      if (!obj?.owner || !obj?.ts) continue
+      const age = Date.now() - Number(obj.ts)
+      if (age > ttl) continue
+      out.push({ orderId: id, owner: obj.owner, ts: Number(obj.ts) })
+    } catch (err) {
+      void err
+    }
+  }
+  return out.sort((a, b) => a.orderId - b.orderId)
+}
