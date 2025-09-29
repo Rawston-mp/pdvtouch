@@ -14,6 +14,7 @@ export type CartItem = {
 const PREFIX = "pdv.cart.v1."
 const CURRENT_KEY = "pdv.currentOrderId.v1"
 const LOCK_PREFIX = "pdv.orderlock.v1."
+const REQ_PREFIX = "pdv.orderlock.req.v1."
 const ENV = (import.meta as unknown as { env?: Record<string, string | undefined> }).env || {}
 const DEFAULT_LOCK_TTL_MS = Number(ENV.VITE_LOCK_TTL_MS) || 15000 // 15s padrão
 const DEFAULT_LOCK_HEARTBEAT_MS = Number(ENV.VITE_LOCK_HEARTBEAT_MS) || 10000 // 10s padrão
@@ -45,6 +46,7 @@ function lockKey(orderId: number): string {
 }
 
 type OrderLock = { owner: string; ts: number }
+type ReleaseReq = { by: string; ts: number }
 
 /** Salva o rascunho de uma comanda específica. */
 export function saveCartDraft(orderId: number, items: CartItem[]): void {
@@ -217,6 +219,56 @@ export function listOrderLocks(): Array<{ orderId: number; owner: string; ts: nu
     } catch (err) {
       void err
     }
+  }
+  return out.sort((a, b) => a.orderId - b.orderId)
+}
+
+/** Solicita liberação do lock para uma comanda (fica visível para quem detém o lock). TTL ~10min. */
+export function requestOrderRelease(orderId: number, requester: string): boolean {
+  if (!Number.isFinite(orderId) || !requester) return false
+  try {
+    const payload: ReleaseReq = { by: requester, ts: Date.now() }
+    localStorage.setItem(REQ_PREFIX + String(orderId), JSON.stringify(payload))
+    return true
+  } catch { return false }
+}
+
+/** Obtém uma solicitação de liberação da comanda, se não expirou. */
+export function getOrderReleaseRequest(orderId: number): ReleaseReq | null {
+  if (!Number.isFinite(orderId)) return null
+  try {
+    const raw = localStorage.getItem(REQ_PREFIX + String(orderId))
+    if (!raw) return null
+    const obj = JSON.parse(raw) as ReleaseReq
+    if (!obj?.by || !obj?.ts) return null
+    const age = Date.now() - Number(obj.ts)
+    const TTL = 10 * 60 * 1000 // 10 minutos
+    if (age > TTL) return null
+    return obj
+  } catch { return null }
+}
+
+export function clearOrderReleaseRequest(orderId: number): void {
+  try { localStorage.removeItem(REQ_PREFIX + String(orderId)) } catch { /* ignore */ }
+}
+
+export function listOrderReleaseRequests(): Array<{ orderId: number; by: string; ts: number }> {
+  const out: Array<{ orderId: number; by: string; ts: number }> = []
+  const TTL = 10 * 60 * 1000
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i) || ''
+    if (!k.startsWith(REQ_PREFIX)) continue
+    const id = Number(k.slice(REQ_PREFIX.length))
+    if (!Number.isFinite(id)) continue
+    try {
+      const raw = localStorage.getItem(k)
+      if (!raw) continue
+      const obj = JSON.parse(raw) as ReleaseReq
+      if (!obj?.by || !obj?.ts) continue
+      const age = Date.now() - Number(obj.ts)
+      if (age > TTL) continue
+      out.push({ orderId: id, by: obj.by, ts: Number(obj.ts) })
+    } catch { /* ignore */ }
   }
   return out.sort((a, b) => a.orderId - b.orderId)
 }

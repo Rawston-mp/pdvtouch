@@ -20,10 +20,13 @@ import {
   getLockTimings,
   listOrderLocks,
   listDraftOrders,
+  requestOrderRelease,
+  getOrderReleaseRequest,
+  clearOrderReleaseRequest,
   type CartItem,
 } from '../lib/cartStorage'
 import { useSession } from '../auth/session'
-import { listAwaitingReturn, clearUsage } from '../lib/comandaUsage'
+import { listAwaitingReturn, listAwaitingPayment, clearUsage, markAwaitingPayment } from '../lib/comandaUsage'
 
 type Category = 'Pratos' | 'Bebidas' | 'Sobremesas' | 'Por Peso'
 const CATEGORIES: { key: Category; label: string }[] = [
@@ -87,6 +90,7 @@ export default function VendaRapida() {
   const orderActive = orderId != null
   const [lockOwner, setLockOwner] = useState<string | null>(null)
   const [lockSeconds, setLockSeconds] = useState<number>(0)
+  const [releaseReq, setReleaseReq] = useState<{ by: string; ts: number } | null>(null)
 
   // boot
   useEffect(() => {
@@ -121,6 +125,13 @@ export default function VendaRapida() {
         const secs = Math.max(0, Math.ceil((ttl - age) / 1000))
         setLockSeconds(secs)
         setLockOwner(info.owner === owner ? owner : 'other')
+        // monitora pedido de liberação se eu detenho o lock
+        if (info.owner === owner) {
+          const req = getOrderReleaseRequest(orderId)
+          setReleaseReq(req)
+        } else {
+          setReleaseReq(null)
+        }
       } catch (err) { void err }
     }
     tick()
@@ -139,6 +150,8 @@ export default function VendaRapida() {
   const nextClient = useCallback(() => {
     if (!orderActive) return
     saveCartDraft(orderId!, cart)
+    // Modo balança: sinaliza que o cliente foi ao caixa pagar
+    try { if (isBalancaRole && orderId) markAwaitingPayment(orderId, stationNs || 'local') } catch (err) { void err }
     setCart([])
     setPesoItemId(null)
     setQuickQty('0')
@@ -147,7 +160,7 @@ export default function VendaRapida() {
     }
     clearCurrentOrderId(stationNs)
     setOrderId(null)
-  }, [orderActive, orderId, cart, stationNs])
+  }, [orderActive, orderId, cart, stationNs, isBalancaRole])
 
   // ESC = Próximo cliente somente BALANÇA
   useEffect(() => {
@@ -420,7 +433,9 @@ export default function VendaRapida() {
               <button className="btn btn-primary" onClick={applyUnified}>
                 Aplicar
               </button>
-              <button className="btn" title="Ver comandas abertas" onClick={() => setShowLocks(true)}>Comandas abertas</button>
+              <button className="btn" title="Ver comandas abertas" onClick={() => setShowLocks(true)}>
+                Comandas abertas <LocksBadge />
+              </button>
 
               {orderActive && (
                 <>
@@ -469,6 +484,22 @@ export default function VendaRapida() {
         </div>
       </div>
 
+      {/* Banner de solicitação de liberação (se eu detenho o lock da comanda ativa) */}
+      {orderActive && lockOwner === (stationNs || 'local') && releaseReq && (
+        <div className="pill" style={{ background: '#fff7ed', border: '1px solid #fed7aa', marginBottom: 10 }}>
+          Solicitaram liberação desta comanda: {releaseReq.by}
+          <span className="small muted"> — há {Math.max(0, Math.floor((Date.now() - releaseReq.ts)/1000))}s</span>
+          <div className="row" style={{ gap: 8, marginTop: 6 }}>
+            <button onClick={() => {
+              try { clearOrderReleaseRequest(orderId!) } catch (err) { void err }
+              try { releaseOrderLock(orderId!, stationNs || 'local') } catch (err) { void err }
+              alert('Lock liberado.');
+            }}>Liberar agora</button>
+            <button onClick={() => { try { clearOrderReleaseRequest(orderId!) } catch (err) { void err } }}>Ocultar</button>
+          </div>
+        </div>
+      )}
+
       {/* Abas */}
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="row" style={{ gap: 8 }}>
@@ -488,7 +519,7 @@ export default function VendaRapida() {
         {/* Modal de Locks */}
         {showLocks && (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => setShowLocks(false)}>
-            <div className="card" style={{ width: 520, maxWidth: '90%', maxHeight: '80vh', overflow: 'auto' }} onClick={(e) => e.stopPropagation()}>
+            <div className="card" style={{ width: 720, maxWidth: '95%', maxHeight: '85vh', overflow: 'auto' }} onClick={(e) => e.stopPropagation()}>
               <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                 <h3 style={{ margin: 0 }}>Comandas abertas</h3>
                 <button onClick={() => setShowLocks(false)}>Fechar</button>
@@ -716,18 +747,44 @@ export default function VendaRapida() {
   )
 }
 
+function LocksBadge() {
+  const [count, setCount] = React.useState(0)
+  React.useEffect(() => {
+    const tick = () => {
+      const total = listOrderLocks().length + listAwaitingReturn().length + listAwaitingPayment().length
+      setCount(total)
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [])
+  if (count === 0) return null
+  return <span className="pill small" style={{ marginLeft: 6 }}>{count}</span>
+}
+
 function LocksList({ stationNs, onOpen }: { stationNs?: string, onOpen: (orderId: number) => void }) {
   const [locks, setLocks] = React.useState<Array<{ orderId: number; owner: string; ts: number }>>([])
   const [awaiting, setAwaiting] = React.useState<Array<{ orderId: number; holder?: string; ts: number }>>([])
+  const [awaitingPay, setAwaitingPay] = React.useState<Array<{ orderId: number; holder?: string; ts: number }>>([])
   const [drafts, setDrafts] = React.useState<Array<{ orderId: number; items: number }>>([])
   const [nameMap, setNameMap] = React.useState<Record<string, string>>({})
+  const [search, setSearch] = React.useState('')
+  const [sort, setSort] = React.useState<'asc'|'desc'>('asc')
+  const [showLocks, setShowLocks] = React.useState(true)
+  const [showAwaitPay, setShowAwaitPay] = React.useState(true)
+  const [showAwaitRet, setShowAwaitRet] = React.useState(true)
+  const [showDrafts, setShowDrafts] = React.useState(true)
   React.useEffect(() => {
     const load = () => {
       setLocks(listOrderLocks())
       setAwaiting(listAwaitingReturn())
+      setAwaitingPay(listAwaitingPayment())
       // Rascunhos sem lock e não aguardando devolução
       const lockedIds = new Set(listOrderLocks().map((l) => l.orderId))
-      const awaitingIds = new Set(listAwaitingReturn().map((a) => a.orderId))
+      const awaitingIds = new Set([
+        ...listAwaitingReturn().map((a) => a.orderId),
+        ...listAwaitingPayment().map((a) => a.orderId),
+      ])
       const ds = listDraftOrders()
         .filter((id) => !lockedIds.has(id) && !awaitingIds.has(id))
         .map((id) => ({ orderId: id, items: (loadCartDraft(id) || []).length }))
@@ -745,7 +802,8 @@ function LocksList({ stationNs, onOpen }: { stationNs?: string, onOpen: (orderId
     const unresolved = Array.from(new Set(
       [
         ...locks.map((l) => l.owner),
-        ...awaiting.map((a) => a.holder || '')
+        ...awaiting.map((a) => a.holder || ''),
+        ...awaitingPay.map((a) => a.holder || '')
       ]
         .filter(Boolean)
         .filter((o) => o.startsWith('u:') && !nameMap[o])
@@ -766,74 +824,141 @@ function LocksList({ stationNs, onOpen }: { stationNs?: string, onOpen: (orderId
         setNameMap((m) => ({ ...m, ...Object.fromEntries(entries) }))
       }
     })()
-  }, [locks, awaiting, nameMap])
+  }, [locks, awaiting, awaitingPay, nameMap])
 
-  const hasAny = locks.length > 0 || awaiting.length > 0 || drafts.length > 0
+  const hasAny = locks.length > 0 || awaiting.length > 0 || awaitingPay.length > 0 || drafts.length > 0
   if (!hasAny) return <div className="muted">Nenhuma comanda em uso no momento.</div>
 
   const fmtTime = (ts: number) => new Date(ts).toLocaleTimeString()
+  const ago = (ts: number) => {
+    const secs = Math.max(0, Math.floor((Date.now() - ts) / 1000))
+    if (secs < 60) return `${secs}s`
+    const mins = Math.floor(secs / 60)
+    if (mins < 60) return `${mins}m`
+    const hrs = Math.floor(mins / 60)
+    return `${hrs}h${mins % 60 ? ' ' + (mins % 60) + 'm' : ''}`
+  }
+
+  const applySearch = (ids: number[]) => {
+    const s = search.trim()
+    if (!s) return ids
+    const n = Number(s)
+    if (Number.isFinite(n)) return ids.filter((id) => id === n)
+    return ids
+  }
+  // ordenação aplicada diretamente nos maps por seção
 
   return (
     <div style={{ display: 'grid', gap: 12 }}>
-      {locks.length > 0 && (
+      {/* Controles */}
+      <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+        <input placeholder="Buscar Nº" value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 120 }} />
+  <select value={sort} onChange={(e) => setSort(e.target.value as 'asc' | 'desc')}>
+          <option value="asc">Ordem ascendente</option>
+          <option value="desc">Ordem descendente</option>
+        </select>
+        <label className="small"><input type="checkbox" checked={showLocks} onChange={(e) => setShowLocks(e.target.checked)} /> Locks</label>
+        <label className="small"><input type="checkbox" checked={showAwaitPay} onChange={(e) => setShowAwaitPay(e.target.checked)} /> Aguard. Pagamento</label>
+        <label className="small"><input type="checkbox" checked={showAwaitRet} onChange={(e) => setShowAwaitRet(e.target.checked)} /> Aguard. Devolução</label>
+        <label className="small"><input type="checkbox" checked={showDrafts} onChange={(e) => setShowDrafts(e.target.checked)} /> Rascunhos</label>
+      </div>
+
+      {showLocks && locks.length > 0 && (
         <div>
           <div className="small muted" style={{ marginBottom: 6 }}>Em edição (locks ativos)</div>
           <div style={{ display: 'grid', gap: 8 }}>
-            {locks.map((l) => {
-              const isMine = l.owner === (stationNs || 'local')
-              const who = isMine
-                ? 'esta estação'
-                : (l.owner.startsWith('u:') ? (nameMap[l.owner] || `estação ${l.owner}`) : l.owner)
-              return (
-                <div key={`lock-${l.orderId}`} className="row" style={{ justifyContent: 'space-between', borderBottom: '1px solid #f0f0f0', paddingBottom: 6 }}>
-                  <div>
-                    <strong>Comanda {l.orderId}</strong>
-                    <div className="small muted">Atualizado às {fmtTime(l.ts)}</div>
+            {locks
+              .filter((l) => applySearch([l.orderId]).length > 0)
+              .sort((a, b) => sort === 'asc' ? a.orderId - b.orderId : b.orderId - a.orderId)
+              .map((l) => {
+                const isMine = l.owner === (stationNs || 'local')
+                const who = isMine
+                  ? 'esta estação'
+                  : (l.owner.startsWith('u:') ? (nameMap[l.owner] || `estação ${l.owner}`) : l.owner)
+                return (
+                  <div key={`lock-${l.orderId}`} className="row" style={{ justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f0f0f0', paddingBottom: 6 }}>
+                    <div>
+                      <strong>Comanda {l.orderId}</strong>
+                      <div className="small muted">Atualizado às {fmtTime(l.ts)} • há {ago(l.ts)}</div>
+                    </div>
+                    <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+                      <div className="small" style={{ opacity: .9 }}>{who}</div>
+                      {!isMine && (
+                        <button className="btn" onClick={() => requestOrderRelease(l.orderId, stationNs || 'local')}>Solicitar liberação</button>
+                      )}
+                    </div>
                   </div>
-                  <div className="small" style={{ opacity: .9 }}>{who}</div>
-                </div>
-              )
-            })}
+                )
+              })}
           </div>
         </div>
       )}
 
-      {awaiting.length > 0 && (
+      {showAwaitPay && awaitingPay.length > 0 && (
+        <div>
+          <div className="small muted" style={{ margin: '6px 0' }}>Aguardando pagamento</div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            {awaitingPay
+              .filter((a) => applySearch([a.orderId]).length > 0)
+              .sort((a, b) => sort === 'asc' ? a.orderId - b.orderId : b.orderId - a.orderId)
+              .map((a) => {
+                const who = a.holder?.startsWith('u:') ? (nameMap[a.holder] || a.holder) : (a.holder || '—')
+                return (
+                  <div key={`waitpay-${a.orderId}`} className="row" style={{ justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f0f0f0', paddingBottom: 6 }}>
+                    <div>
+                      <strong>Comanda {a.orderId}</strong>
+                      <div className="small muted">Desde {fmtTime(a.ts)} • há {ago(a.ts)}</div>
+                    </div>
+                    <div className="small" style={{ opacity: .9 }}>da {who}</div>
+                  </div>
+                )
+              })}
+          </div>
+        </div>
+      )}
+
+      {showAwaitRet && awaiting.length > 0 && (
         <div>
           <div className="small muted" style={{ margin: '6px 0' }}>Aguardando devolução</div>
           <div style={{ display: 'grid', gap: 8 }}>
-            {awaiting.map((a) => {
-              const who = a.holder?.startsWith('u:') ? (nameMap[a.holder] || a.holder) : (a.holder || '—')
-              return (
-                <div key={`wait-${a.orderId}`} className="row" style={{ justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f0f0f0', paddingBottom: 6 }}>
-                  <div>
-                    <strong>Comanda {a.orderId}</strong>
-                    <div className="small muted">Desde {fmtTime(a.ts)}</div>
+            {awaiting
+              .filter((a) => applySearch([a.orderId]).length > 0)
+              .sort((a, b) => sort === 'asc' ? a.orderId - b.orderId : b.orderId - a.orderId)
+              .map((a) => {
+                const who = a.holder?.startsWith('u:') ? (nameMap[a.holder] || a.holder) : (a.holder || '—')
+                return (
+                  <div key={`wait-${a.orderId}`} className="row" style={{ justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f0f0f0', paddingBottom: 6 }}>
+                    <div>
+                      <strong>Comanda {a.orderId}</strong>
+                      <div className="small muted">Desde {fmtTime(a.ts)} • há {ago(a.ts)}</div>
+                    </div>
+                    <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+                      <div className="small" style={{ opacity: .9 }}>com {who}</div>
+                      <button className="btn" onClick={() => clearUsage(a.orderId)}>Marcar devolvida</button>
+                    </div>
                   </div>
-                  <div className="row" style={{ gap: 8, alignItems: 'center' }}>
-                    <div className="small" style={{ opacity: .9 }}>com {who}</div>
-                    <button className="btn" onClick={() => clearUsage(a.orderId)}>Marcar devolvida</button>
-                  </div>
-                </div>
-              )
-            })}
+                )
+              })}
           </div>
         </div>
       )}
 
-      {drafts.length > 0 && (
+      {showDrafts && drafts.length > 0 && (
         <div>
           <div className="small muted" style={{ margin: '6px 0' }}>Rascunhos (sem lock)</div>
           <div style={{ display: 'grid', gap: 8 }}>
-            {drafts.map((d) => (
-              <div key={`draft-${d.orderId}`} className="row" style={{ justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f0f0f0', paddingBottom: 6 }}>
-                <div>
-                  <strong>Comanda {d.orderId}</strong>
-                  <div className="small muted">{d.items} item(ns)</div>
+            {drafts
+              .filter((d) => applySearch([d.orderId]).length > 0)
+              .sort((a, b) => sort === 'asc' ? a.orderId - b.orderId : b.orderId - a.orderId)
+              .map((d) => (
+                <div key={`draft-${d.orderId}`} className="row" style={{ justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f0f0f0', paddingBottom: 6 }}>
+                  <div>
+                    <strong>Comanda {d.orderId}</strong>
+                    <div className="small muted">{d.items} item(ns)</div>
+                  </div>
+                  <button className="btn btn-primary" onClick={() => onOpen(d.orderId)}>Abrir</button>
                 </div>
-                <button className="btn btn-primary" onClick={() => onOpen(d.orderId)}>Abrir</button>
-              </div>
-            ))}
+              ))}
           </div>
         </div>
       )}
