@@ -1,11 +1,19 @@
 // src/pages/Admin.tsx
 import { Link } from 'react-router-dom'
+import { useEffect, useState } from 'react'
 import { resetAllData } from '../db/sales'
 
 import { useSession } from '../auth/session'
+import { mintSSO } from '../services/ssoClient'
 
 export default function Admin() {
   const { user, hasRole } = useSession()
+  const [backofficeUrl, setBackofficeUrl] = useState('')
+
+  useEffect(() => {
+    const saved = localStorage.getItem('pdv.backofficeBaseUrl') || ''
+    setBackofficeUrl(saved)
+  }, [])
 
   if (!hasRole('ADMIN') && !hasRole('GERENTE')) {
     return (
@@ -49,6 +57,66 @@ export default function Admin() {
           <li><Link to="/turno">Turno (abertura/suprimento/sangria)</Link></li>
           <li><Link to="/sync">Sync</Link></li>
           <li>
+            <div className="card" style={{ padding: 12, margin: '8px 0' }}>
+              <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <div style={{ fontWeight: 600 }}>Integração Backoffice (SSO)</div>
+                {backofficeUrl ? (
+                  <span className="pill small success" title={backofficeUrl}>
+                    Conectado ao Backoffice
+                  </span>
+                ) : (
+                  <span className="pill small" title="Defina a URL e salve">
+                    Não configurado
+                  </span>
+                )}
+              </div>
+              <div className="row" style={{ gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <input
+                  style={{ minWidth: 280 }}
+                  placeholder="http://localhost:5174"
+                  value={backofficeUrl}
+                  onChange={(e) => setBackofficeUrl(e.target.value)}
+                />
+                <button
+                  className="btn"
+                  onClick={() => {
+                    const v = (backofficeUrl || '').trim()
+                    if (!v) {
+                      localStorage.removeItem('pdv.backofficeBaseUrl')
+                      alert('URL removida.')
+                    } else {
+                      localStorage.setItem('pdv.backofficeBaseUrl', v)
+                      alert('URL do Backoffice salva.')
+                    }
+                  }}
+                >Salvar</button>
+                <button
+                  className="btn"
+                  onClick={() => {
+                    const v = (backofficeUrl || '').trim()
+                    if (!v) return alert('Defina a URL primeiro.')
+                    window.open(v, '_blank', 'noopener,noreferrer')
+                  }}
+                >Testar</button>
+              </div>
+              <div className="small muted" style={{ marginTop: 6 }}>
+                Use a URL base do Backoffice (ex.: http://localhost:5174). Os atalhos abaixo exigem esta configuração.
+              </div>
+            </div>
+          </li>
+          <li>
+            <button onClick={() => mintSSO('/estoque')}>Backoffice: Estoque</button>
+          </li>
+          <li>
+            <button onClick={() => mintSSO('/financeiro/receitas')}>Backoffice: Financeiro</button>
+          </li>
+          <li>
+            <button onClick={() => mintSSO('/relatorios/fechamentos')}>Backoffice: Relatórios</button>
+          </li>
+          <li>
+            <button onClick={() => mintSSO('/cadastro/produtos')}>Backoffice: Cadastros</button>
+          </li>
+          <li>
             <button
               onClick={async () => {
                 const ok = window.confirm('Limpar TUDO (comandas rascunho, vendas e turnos)?')
@@ -56,7 +124,7 @@ export default function Admin() {
                 try {
                   const res = await resetAllData()
                   alert(`Limpeza concluída. Rascunhos removidos: ${res.removedDrafts}.`)
-                } catch (e) {
+                } catch {
                   alert('Erro ao limpar dados.')
                 }
               }}

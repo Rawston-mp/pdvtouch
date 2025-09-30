@@ -1,6 +1,18 @@
 // src/lib/escposTurno.ts
-import type { Printer, Settings } from '../db/models'
-import { profileCommands, ticketHeader } from './escpos'
+import type { Printer, Settings } from '../db'
+type EscposCmds = { init: string; alignLeft: string; alignCenter: string; alignRight: string; boldOn: string; boldOff: string; doubleOn: string; doubleOff: string; cutPartial: string }
+const profileCommands = (_profile: string): EscposCmds => { void _profile; return ({
+  init: '', alignLeft: '', alignCenter: '', alignRight: '', boldOn: '', boldOff: '', doubleOn: '', doubleOff: '', cutPartial: ''
+}) }
+const ticketHeader = (settings: Settings, c: EscposCmds) => {
+  const rows: string[] = []
+  rows.push(c.alignCenter + c.boldOn)
+  rows.push(settings.companyName)
+  rows.push('CNPJ ' + settings.cnpj)
+  if (settings.addressLine1) rows.push(settings.addressLine1)
+  rows.push(c.boldOff)
+  return rows.join('\n')
+}
 
 const line = (w = 32) => '─'.repeat(w)
 const money = (v: number) => 'R$ ' + v.toFixed(2)

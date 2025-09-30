@@ -1,7 +1,7 @@
 // src/utils/guard.tsx
 import { useSession } from '../auth/session'
 import type { ReactNode } from 'react'
-import type { UserRole } from '../db/models'
+import type { Role as UserRole } from '../db'
 
 type Props = {
   /** Perfis permitidos. Se omitido, basta estar autenticado. */

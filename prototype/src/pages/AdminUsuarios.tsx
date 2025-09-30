@@ -1,12 +1,11 @@
 // src/pages/AdminUsuarios.tsx
 import { useEffect, useState } from 'react'
-import type { UserRole } from '../db/models'
+// import type { UserRole } from '../db/models'
+import { mintSSO } from '../services/ssoClient'
 
+type UserRow = { id: number | string; name: string; role: string }
 export default function AdminUsuarios() {
-  const [users, setUsers] = useState<any[]>([])
-  const [name, setName] = useState('')
-  const [role, setRole] = useState<UserRole>('BALANÇA A')
-  const [pin, setPin] = useState('')
+  const [users, setUsers] = useState<UserRow[]>([])
 
   async function refresh() { 
     // TODO: implementar listUsers
@@ -14,45 +13,22 @@ export default function AdminUsuarios() {
   }
   useEffect(() => { refresh() }, [])
 
-  async function add() {
-    if (!name || !pin) return alert('Preencha nome e PIN')
-    // TODO: implementar createUser
-    alert('Função não implementada ainda')
-    setName(''); setPin(''); setRole('BALANÇA A')
-    await refresh()
-  }
+  // Edição e criação de usuários agora são feitas no Backoffice
 
-  async function changePin(id: number) {
-    const n = prompt('Novo PIN:')
-    if (!n) return
-    // TODO: implementar updateUserPin
-    alert('Função não implementada ainda')
-    await refresh()
-  }
+  // async function changePin(id: number) { /* desabilitado no PDV */ }
 
-  async function remove(id: number) {
-    if (!confirm('Remover usuário?')) return
-    // TODO: implementar deleteUser
-    alert('Função não implementada ainda')
-    await refresh()
-  }
+  // async function remove(id: number) { /* desabilitado no PDV */ }
 
   return (
     <div style={{ padding:16 }}>
       <h2>Admin → Usuários</h2>
-
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 180px 140px 120px', gap:8, margin: '12px 0' }}>
-        <input placeholder="Nome" value={name} onChange={e=>setName(e.target.value)} />
-        <select value={role} onChange={e=>setRole(e.target.value as UserRole)}>
-          <option value="BALANÇA A">BALANÇA A</option>
-          <option value="BALANÇA B">BALANÇA B</option>
-          <option value="ATENDENTE">ATENDENTE</option>
-          <option value="CAIXA">CAIXA</option>
-          <option value="GERENTE">GERENTE</option>
-          <option value="ADMIN">ADMIN</option>
-        </select>
-        <input placeholder="PIN" value={pin} onChange={e=>setPin(e.target.value)} />
-        <button onClick={add}>Adicionar</button>
+      <div className="pill" style={{ margin: '8px 0', background: '#fff8e1', borderColor: '#ffb300' }}>
+        Gestão de usuários agora é feita no Backoffice. Use o botão abaixo para abrir Usuários no Backoffice.
+      </div>
+      <div style={{ margin: '12px 0' }}>
+        <button className="btn btn-primary" onClick={() => mintSSO('/cadastro/usuarios')}>
+          Abrir no Backoffice (Usuários)
+        </button>
       </div>
 
       <table style={{ width:'100%', borderCollapse:'collapse' }}>
@@ -67,9 +43,8 @@ export default function AdminUsuarios() {
               <td style={{padding:8}}>{u.id}</td>
               <td style={{padding:8}}>{u.name}</td>
               <td style={{padding:8}}>{u.role}</td>
-              <td style={{padding:8, display:'flex', gap:8}}>
-                <button onClick={() => changePin(u.id)}>Trocar PIN</button>
-                <button onClick={() => remove(u.id)}>Remover</button>
+              <td style={{padding:8, display:'flex', gap:8, justifyContent:'flex-end'}}>
+                <button className="btn" onClick={() => mintSSO('/cadastro/usuarios')}>Gerenciar no Backoffice</button>
               </td>
             </tr>
           ))}

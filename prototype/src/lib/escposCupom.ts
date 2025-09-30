@@ -1,13 +1,33 @@
 // src/lib/escposCupom.ts
-import type { Order, Printer, Settings } from '../db/models'
-import { profileCommands } from './escpos'
+import type { Settings, Printer } from '../db'
+// Mock simples de comandos por perfil
+const profileCommands = (_profile: string) => { void _profile; return ({
+  init: '',
+  alignLeft: '',
+  alignCenter: '',
+  alignRight: '',
+  boldOn: '',
+  boldOff: '',
+  doubleOn: '',
+  doubleOff: '',
+  cutPartial: ''
+}) }
 
 const money = (v:number) => 'R$ ' + v.toFixed(2)
 const line = (w=32) => '─'.repeat(w)
 const fmt = (ts:number) => new Date(ts).toLocaleDateString() + ' ' + new Date(ts).toLocaleTimeString()
 
 export function ticketCupomCliente(opts: {
-  order: Order
+  order: {
+    id: string
+    createdAt: number
+    receiptMode?: 'NAO_FISCAL' | 'FISCAL_NFCE'
+    items: Array<{ name: string; qty: number; unitPrice: number; total: number }>
+    payments?: Array<{ method: string; amount: number; authCode?: string }>
+    total: number
+    customerIdType?: 'NONE' | 'CPF' | 'CNPJ'
+    customerTaxId?: string | null
+  }
   settings: Settings
   printer: Printer
   nfce?: { chaveAcesso: string; urlConsulta: string; qrCodeConteudo: string }

@@ -1,8 +1,7 @@
 // src/pages/VendaBalanca.tsx
 import { useEffect, useMemo, useState } from 'react'
-import { db } from '../db'
 import { saveCartDraft } from '../lib/cartStorage'
-import type { Order, OrderItem } from '../db/models'
+type OrderItem = { id: string; productId: number; name: string; qty: number; unitPrice: number; total: number; isWeight: boolean }
 
 export default function VendaBalanca() {
   const [comanda, setComanda] = useState('')
@@ -17,12 +16,19 @@ export default function VendaBalanca() {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         e.preventDefault()
-        if (comandaOk) proximoCliente()
+        if (comandaOk) {
+          // chama a ação atual sem depender da ref
+          if (!comandaOk) return
+          if (items.length === 0) return
+          // limpa para o próximo cliente
+          setItems([])
+          setComanda('')
+        }
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [comandaOk, items])
+  }, [comandaOk, items.length])
 
   function addPeso() {
     const pesoKg = Math.random() * 0.8 + 0.2 // 200g–1kg (mock)

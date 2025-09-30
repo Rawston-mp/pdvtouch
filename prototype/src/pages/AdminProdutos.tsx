@@ -1,9 +1,9 @@
 // src/pages/AdminProdutos.tsx
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import type { Product } from '../db'
-import { listProducts, upsertProduct, deleteProduct } from '../db/products'
-import { useSession } from '../auth/session'
-import { parseCSV, toCSV } from '../lib/csv'
+import { listProducts, upsertProduct } from '../db/products'
+import { toCSV } from '../lib/csv'
+import { mintSSO } from '../services/ssoClient'
 
 type Category = Product['category']
 const CATEGORIES: { key: Category; label: string }[] = [
@@ -13,7 +13,7 @@ const CATEGORIES: { key: Category; label: string }[] = [
   { key: 'Por Peso', label: 'Por Peso' },
 ]
 
-const money = (n: any) => (Number(n || 0)).toFixed(2)
+const money = (n: number | string | null | undefined) => (Number(n || 0)).toFixed(2)
 const parseNum = (v: string | number | null | undefined, fallback = 0): number => {
   if (typeof v === 'number') return Number.isFinite(v) ? v : fallback
   if (!v) return fallback
@@ -22,8 +22,10 @@ const parseNum = (v: string | number | null | undefined, fallback = 0): number =
 }
 
 export default function AdminProdutos() {
-  const { hasRole } = useSession()
-  const canEdit = hasRole('ADMIN') || hasRole('GERENTE')
+  // const { hasRole } = useSession()
+  // const canEditRole = hasRole('ADMIN') || hasRole('GERENTE')
+  // PDV agora é somente leitura para cadastros; edição deve ser feita no Backoffice
+  const canEdit = false
 
   const [items, setItems] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
@@ -56,7 +58,7 @@ export default function AdminProdutos() {
   const [editing, setEditing] = useState<boolean>(false)
   const [error, setError] = useState<string>('')
   const [notice, setNotice] = useState<string>('')
-  const fileRef = useRef<HTMLInputElement | null>(null)
+  // const fileRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     load()
@@ -100,20 +102,20 @@ export default function AdminProdutos() {
     setNotice('')
   }
 
-  function editItem(p: Product) {
-    setEditing(true)
-    setError('')
-    setForm({
-      id: p.id,
-      name: p.name,
-      category: p.category,
-      byWeight: !!p.byWeight,
-      price: String(p.price ?? 0),
-      pricePerKg: String(p.pricePerKg ?? 0),
-      code: p.code || '',
-      active: !!p.active,
-    })
-  }
+  // function editItem(p: Product) {
+  //   setEditing(true)
+  //   setError('')
+  //   setForm({
+  //     id: p.id,
+  //     name: p.name,
+  //     category: p.category,
+  //     byWeight: !!p.byWeight,
+  //     price: String(p.price ?? 0),
+  //     pricePerKg: String(p.pricePerKg ?? 0),
+  //     code: p.code || '',
+  //     active: !!p.active,
+  //   })
+  // }
 
   async function save() {
     try {
@@ -149,28 +151,28 @@ export default function AdminProdutos() {
     }
   }
 
-  async function remove(p: Product) {
-    if (!canEdit) return
-    if (!confirm(`Remover o produto "${p.name}"?`)) return
-    try {
-      await deleteProduct(p.id)
-      await load()
-    } catch (e) {
-      console.error(e)
-      alert('Erro ao remover produto.')
-    }
-  }
+  // async function remove(p: Product) {
+  //   if (!canEdit) return
+  //   if (!confirm(`Remover o produto "${p.name}"?`)) return
+  //   try {
+  //     await deleteProduct(p.id)
+  //     await load()
+  //   } catch (e) {
+  //     console.error(e)
+  //     alert('Erro ao remover produto.')
+  //   }
+  // }
 
-  async function toggleActive(p: Product) {
-    if (!canEdit) return
-    try {
-      await upsertProduct({ ...p, active: !p.active })
-      await load()
-    } catch (e) {
-      console.error(e)
-      alert('Erro ao atualizar produto.')
-    }
-  }
+  // async function toggleActive(p: Product) {
+  //   if (!canEdit) return
+  //   try {
+  //     await upsertProduct({ ...p, active: !p.active })
+  //     await load()
+  //   } catch (e) {
+  //     console.error(e)
+  //     alert('Erro ao atualizar produto.')
+  //   }
+  // }
 
   function download(filename: string, text: string) {
     const blob = new Blob([text], { type: 'text/csv;charset=utf-8;' })
@@ -230,97 +232,51 @@ export default function AdminProdutos() {
         active: 'true',
       },
     ]
-    const csv = toCSV(rows as any, cols)
+  const csv = toCSV(rows as Record<string, string | number | boolean>[], cols)
     download('exemplo_produtos.csv', csv)
   }
 
-  const parseBool = (v: any): boolean => {
-    if (typeof v === 'boolean') return v
-    if (typeof v === 'number') return v !== 0
-    const s = String(v || '').trim().toLowerCase()
-    return s === '1' || s === 'true' || s === 'sim' || s === 'yes' || s === 'y'
-  }
+  // const parseBool = (v: unknown): boolean => {
+  //   if (typeof v === 'boolean') return v
+  //   if (typeof v === 'number') return v !== 0
+  //   const s = String(v || '').trim().toLowerCase()
+  //   return s === '1' || s === 'true' || s === 'sim' || s === 'yes' || s === 'y'
+  // }
 
-  const normalizeCategory = (v: any): Category => {
-    const s = String(v || '').trim()
-    const cats = CATEGORIES.map((c) => c.key)
-    if (cats.includes(s as Category)) return s as Category
-    // tenta por label
-    const found = CATEGORIES.find((c) => c.label.toLowerCase() === s.toLowerCase())
-    return (found?.key ?? 'Pratos') as Category
-  }
+  // const normalizeCategory = (v: unknown): Category => {
+  //   const s = String(v || '').trim()
+  //   const cats = CATEGORIES.map((c) => c.key)
+  //   if (cats.includes(s as Category)) return s as Category
+  //   // tenta por label
+  //   const found = CATEGORIES.find((c) => c.label.toLowerCase() === s.toLowerCase())
+  //   return (found?.key ?? 'Pratos') as Category
+  // }
 
-  const parseLocaleNumber = (v: any, fallback = 0): number => {
-    if (typeof v === 'number') return Number.isFinite(v) ? v : fallback
-    const s = String(v ?? '').trim()
-    if (!s) return fallback
-    if (s.includes(',') && s.includes('.')) {
-      // Assumir ponto como milhar e vírgula como decimal
-      const n = Number(s.replace(/\./g, '').replace(',', '.'))
-      return Number.isFinite(n) ? n : fallback
-    }
-    if (s.includes(',')) {
-      const n = Number(s.replace(',', '.'))
-      return Number.isFinite(n) ? n : fallback
-    }
-    const n = Number(s)
-    return Number.isFinite(n) ? n : fallback
-  }
+  // const parseLocaleNumber = (v: unknown, fallback = 0): number => {
+  //   if (typeof v === 'number') return Number.isFinite(v) ? v : fallback
+  //   const s = String(v ?? '').trim()
+  //   if (!s) return fallback
+  //   if (s.includes(',') && s.includes('.')) {
+  //     // Assumir ponto como milhar e vírgula como decimal
+  //     const n = Number(s.replace(/\./g, '').replace(',', '.'))
+  //     return Number.isFinite(n) ? n : fallback
+  //   }
+  //   if (s.includes(',')) {
+  //     const n = Number(s.replace(',', '.'))
+  //     return Number.isFinite(n) ? n : fallback
+  //   }
+  //   const n = Number(s)
+  //   return Number.isFinite(n) ? n : fallback
+  // }
 
-  async function handleImportFile(file: File) {
-    try {
-      if (!canEdit) return
-      const text = await file.text()
-      const rows = parseCSV(text)
-      if (!rows.length) {
-        setError('CSV vazio ou inválido.')
-        return
-      }
-      let ok = 0
-      let fail = 0
-      for (const r of rows) {
-        try {
-          const byWeight = parseBool(r.byWeight)
-          const prod: Product = {
-            id: r.id?.trim() || (crypto?.randomUUID ? crypto.randomUUID() : `p_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`),
-            name: (r.name || '').trim(),
-            category: normalizeCategory(r.category),
-            byWeight,
-            price: byWeight ? 0 : Math.max(0, parseLocaleNumber(r.price, 0)),
-            pricePerKg: byWeight ? Math.max(0, parseLocaleNumber(r.pricePerKg, 0)) : 0,
-            code: (r.code || '').trim() || undefined,
-            active: parseBool(r.active ?? true),
-          }
-          if (!prod.name) throw new Error('Nome vazio')
-          if (!byWeight && prod.price <= 0) throw new Error('Preço unitário inválido')
-          if (byWeight && (prod.pricePerKg || 0) <= 0) throw new Error('Preço/kg inválido')
-          await upsertProduct(prod)
-          ok++
-        } catch (e) {
-          console.warn('Falha em linha CSV:', r, e)
-          fail++
-        }
-      }
-      setNotice(`Importação concluída. Sucesso: ${ok}. Falhas: ${fail}.`)
-      setError('')
-      await load()
-    } catch (e) {
-      console.error(e)
-      setError('Erro ao importar CSV.')
-    } finally {
-      if (fileRef.current) fileRef.current.value = ''
-    }
-  }
+  // Importação de CSV desabilitada no PDV; realizar no Backoffice
 
   return (
     <div className="container">
       <h2>Admin → Produtos</h2>
-
-      {!canEdit && (
-        <div className="pill" style={{ margin: '8px 0', background: '#fff8e1', borderColor: '#ffb300' }}>
-          Você está em um perfil sem permissão de edição (somente ADMIN/GERENTE podem criar/editar/remover produtos).
-        </div>
-      )}
+      <div className="pill" style={{ margin: '8px 0', background: '#fff8e1', borderColor: '#ffb300' }}>
+        Edição de produtos agora é feita no Backoffice. Use o botão abaixo para abrir Cadastros no Backoffice.
+      </div>
       {!!notice && (
         <div className="pill" style={{ margin: '8px 0', background: '#e8f5e9', borderColor: '#4caf50' }}>
           {notice}
@@ -341,7 +297,7 @@ export default function AdminProdutos() {
           </div>
           <div>
             <label className="small muted">Categoria</label>
-            <select value={cat} onChange={(e) => setCat(e.target.value as any)}>
+            <select value={cat} onChange={(e) => setCat(e.target.value as Category | 'Todas')}>
               <option value="Todas">Todas</option>
               {CATEGORIES.map((c) => (
                 <option key={c.key} value={c.key}>
@@ -369,6 +325,9 @@ export default function AdminProdutos() {
         <div className="row" style={{ justifyContent: 'space-between', marginBottom: 8, gap: 8, flexWrap: 'wrap' }}>
           <h3 className="card-title">Produtos</h3>
           <div className="row" style={{ gap: 8 }}>
+            <button className="btn btn-primary" onClick={() => mintSSO('/cadastro/produtos')}>
+              Abrir no Backoffice (Cadastros)
+            </button>
             <button className="btn" onClick={handleDownloadModelCSV}>
               Baixar modelo CSV
             </button>
@@ -378,32 +337,7 @@ export default function AdminProdutos() {
             <button className="btn" onClick={handleExportCSV} disabled={loading}>
               Exportar CSV
             </button>
-            {canEdit && (
-              <>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept=".csv,text/csv"
-                  style={{ display: 'none' }}
-                  onChange={(e) => {
-                    const f = e.target.files?.[0]
-                    if (f) handleImportFile(f)
-                  }}
-                />
-                <button className="btn" onClick={() => fileRef.current?.click()} disabled={loading}>
-                  Importar CSV
-                </button>
-                <button
-                  className="btn btn-primary"
-                  onClick={() => {
-                    setForm(emptyForm)
-                    setEditing(true)
-                  }}
-                >
-                  Novo produto
-                </button>
-              </>
-            )}
+            {/* Importação e criação ficam disponíveis no Backoffice */}
           </div>
         </div>
 
@@ -442,14 +376,8 @@ export default function AdminProdutos() {
                   </td>
                   <td>
                     <div className="row" style={{ gap: 6, justifyContent: 'flex-end' }}>
-                      <button onClick={() => editItem(p)} disabled={!canEdit}>
-                        Editar
-                      </button>
-                      <button onClick={() => toggleActive(p)} disabled={!canEdit}>
-                        {p.active ? 'Desativar' : 'Ativar'}
-                      </button>
-                      <button className="btn" onClick={() => remove(p)} disabled={!canEdit}>
-                        Remover
+                      <button className="btn" onClick={() => mintSSO('/cadastro/produtos')}>
+                        Editar no Backoffice
                       </button>
                     </div>
                   </td>
@@ -461,7 +389,8 @@ export default function AdminProdutos() {
       </div>
 
       {/* Formulário */}
-      {editing && (
+      {/* Formulário de edição desativado no PDV; edição ocorre no Backoffice */}
+      {editing && canEdit && (
         <div className="card">
           <h3 className="card-title">
             {form.id ? 'Editar produto' : 'Novo produto'}

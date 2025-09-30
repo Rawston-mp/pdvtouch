@@ -1,6 +1,6 @@
 // src/db/counters.ts
 import { db, initDb } from './index'
-import type { Counters, ZClosure, Order } from './models'
+import type { Counters, ZClosure } from './index'
 
 export function startOfDay(ts: number) {
   const d = new Date(ts); d.setHours(0,0,0,0); return +d
@@ -35,7 +35,7 @@ export async function listZClosures(limit = 20): Promise<ZClosure[]> {
 }
 
 /** Agrega totais para o período [from, to] a partir das orders pagas */
-export function summarize(orders: Order[]) {
+export function summarize(orders: Array<{ total: number; payments?: Array<{ method: string; amount: number }> }>) {
   const count = orders.length
   const gross = orders.reduce((a, o) => a + o.total, 0)
   const byMethod: Record<string, number> = {}

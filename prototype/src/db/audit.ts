@@ -1,6 +1,6 @@
 // src/db/audit.ts
 import { db, initDb } from './index'
-import type { AuditLog } from './models'
+import type { AuditLog } from './index'
 
 export async function logAudit(entry: Omit<AuditLog, 'id' | 'ts'> & { ts?: number }) {
   await initDb()
