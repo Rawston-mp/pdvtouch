@@ -11,6 +11,10 @@ export type Settings = {
   cnpj: string
   addressLine1: string
   addressLine2: string
+  // Campos opcionais usados por impressões mock
+  headerLines?: string[]
+  footerLines?: string[]
+  showPixOnFooter?: boolean
 }
 
 export type Printer = {
@@ -48,7 +52,15 @@ export type Sale = {
   userId: string
   userName: string
   userRole: string
-  items: any[]
+  items: Array<{
+    id?: string
+    productId?: string | number
+    name: string
+    qty: number
+    unitPrice: number
+    total: number
+    isWeight?: boolean
+  }>
   total: number
   payments: {
     cash: number
@@ -75,6 +87,39 @@ export type ShiftSummary = {
   status: 'OPEN' | 'CLOSED'
 }
 
+// Auditoria simples (usada em AdminAuditoria)
+export type AuditLog = {
+  id?: number
+  ts: number
+  userName?: string | null
+  action: string
+  details?: unknown
+}
+
+// Outbox genérica para eventos offline
+export type OutboxEvent = {
+  id?: number
+  type: string
+  payload: unknown
+  createdAt: number
+  tries: number
+  lastError?: string
+}
+
+// Contadores e fechamento Z (mínimo para compilar)
+export type Counters = {
+  id: 'acc'
+  zBaseline: number
+}
+
+export type ZClosure = {
+  id?: number
+  createdAt: number
+  from: number
+  to: number
+  totals?: unknown
+}
+
 // DB
 class PDVDB extends Dexie {
   settings!: Table<Settings, string>
@@ -83,16 +128,24 @@ class PDVDB extends Dexie {
   users!: Table<User, string>
   sales!: Table<Sale, number>
   shifts!: Table<ShiftSummary, number>
+  audits!: Table<AuditLog, number>
+  outbox!: Table<OutboxEvent, number>
+  counters!: Table<Counters, string>
+  closures!: Table<ZClosure, number>
 
   constructor() {
     super('pdvtouch-proto')
-    this.version(4).stores({
+    this.version(5).stores({
       settings: 'id',
       printers: 'id',
       products: 'id, code, category, byWeight',
       users: 'id, role, active',
       sales: '++id, orderId, timestamp, userId, status',
       shifts: '++id, userId, startTime, status',
+      audits: '++id, ts',
+      outbox: '++id, createdAt, type',
+      counters: 'id',
+      closures: '++id, createdAt',
     })
     this.on('populate', async () => {
       await seedAll(this)

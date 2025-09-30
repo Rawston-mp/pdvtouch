@@ -19,9 +19,13 @@ export async function hashPin(pin: string, saltB64?: string) {
 
 export async function verifyPin(pin: string, hashB64: string, saltB64: string) {
   const { hashB64: test } = await hashPin(pin, saltB64);
-  return crypto.timingSafeEqual
-    ? // Node 20+; no browser não existe: compare manualmente constante:
-      // @ts-ignore
-      crypto.timingSafeEqual(fromB64(test), fromB64(hashB64))
-    : test === hashB64;
+  // Comparação de tempo constante (simples) para strings base64
+  const a = test
+  const b = hashB64
+  if (a.length !== b.length) return false
+  let diff = 0
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  }
+  return diff === 0
 }

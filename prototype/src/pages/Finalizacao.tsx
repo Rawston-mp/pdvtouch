@@ -265,7 +265,13 @@ export default function Finalizacao() {
         userId: user!.id,
         userName: user!.name,
         userRole: user!.role,
-        items: cart,
+        items: cart.map((it) => ({
+          id: it.id,
+          name: it.name,
+          qty: toNumber(it.qty),
+          unitPrice: toNumber(it.price),
+          total: toNumber(it.qty) * toNumber(it.price),
+        })),
         total,
         payments: {
           cash: toNumber(vCash),

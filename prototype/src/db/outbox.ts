@@ -1,5 +1,5 @@
 import { db } from './index'
-import type { OutboxEvent } from './models'
+import type { OutboxEvent } from './index'
 
 export async function enqueue(event: Omit<OutboxEvent, 'tries' | 'createdAt'>) {
   const ev: OutboxEvent = { ...event, tries: 0, createdAt: Date.now() }
@@ -12,11 +12,13 @@ export async function processOutbox(sendFn: (ev: OutboxEvent) => Promise<void>) 
   for (const ev of events) {
     try {
       await sendFn(ev)
-      await db.outbox.delete(ev.id)
-    } catch (err: any) {
-      await db.outbox.update(ev.id, {
+      if (typeof ev.id === 'number') {
+        await db.outbox.delete(ev.id)
+      }
+    } catch (err: unknown) {
+      await db.outbox.update(ev.id as number, {
         tries: ev.tries + 1,
-        lastError: String(err?.message ?? err)
+        lastError: String((err as { message?: string })?.message ?? err)
       })
     }
   }

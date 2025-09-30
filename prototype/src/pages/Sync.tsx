@@ -3,6 +3,8 @@ import React from 'react'
 import { db } from '../db'
 import { toCSV } from '../lib/csv'
 import { listSales } from '../db/sales'
+import { syncProdutosFromBackoffice } from '../services/syncClient'
+import type { User, Product as PDVProduct, ShiftSummary, Sale } from '../db'
 
 type Counts = {
   settings: number
@@ -148,6 +150,26 @@ export default function Sync() {
     }
   }
 
+  async function syncProdutosBackoffice() {
+    try {
+      setBusy(true)
+      setMsg('')
+      const base = localStorage.getItem('pdv.backofficeBaseUrl')
+      if (!base) {
+        setMsg('Backoffice não configurado. Defina em Admin > Integração Backoffice (SSO).')
+        return
+      }
+      const res = await syncProdutosFromBackoffice(base)
+      setMsg(`Sync concluído: ${res.inserted} produto(s) importado(s)/atualizado(s).`)
+      await refresh()
+    } catch (e) {
+      console.error(e)
+      setMsg('Falha ao sincronizar produtos do Backoffice.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function exportOnlyUsers() {
     try {
       setBusy(true)
@@ -167,9 +189,9 @@ export default function Sync() {
     try {
       setBusy(true)
       setMsg('')
-      const users = await db.users.toArray()
+      const users = await db.users.toArray() as User[]
       const cols = ['id', 'name', 'role', 'active', 'pinHash']
-      const rows = users.map((u: any) => ({
+      const rows = users.map((u: User) => ({
         id: u.id,
         name: u.name,
         role: u.role,
@@ -197,9 +219,9 @@ export default function Sync() {
     try {
       setBusy(true)
       setMsg('')
-      const products = await db.products.toArray()
+      const products = await db.products.toArray() as PDVProduct[]
       const cols = ['id', 'name', 'category', 'byWeight', 'price', 'pricePerKg', 'code', 'active']
-      const rows = products.map((p: any) => ({
+      const rows = products.map((p: PDVProduct) => ({
         id: p.id,
         name: p.name,
         category: p.category,
@@ -269,8 +291,8 @@ export default function Sync() {
         return
       }
       // Como não há listagem por período pronta para shifts, faremos um filtro manual
-      const all = await db.shifts.toArray()
-      const filtered = all.filter((s: any) => s.startTime >= start.getTime() && s.startTime <= end.getTime())
+  const all = await db.shifts.toArray() as ShiftSummary[]
+  const filtered = all.filter((s) => s.startTime >= start.getTime() && s.startTime <= end.getTime())
       exportBlob(
         `pdvtouch-shifts-${startDate.replace(/-/g, '')}-${endDate.replace(/-/g, '')}.json`,
         { startDate, endDate, count: filtered.length, shifts: filtered }
@@ -288,9 +310,9 @@ export default function Sync() {
     try {
       setBusy(true)
       setMsg('')
-      const text = await file.text()
-      const data = JSON.parse(text)
-      const sales: any[] = Array.isArray(data) ? data : Array.isArray(data?.sales) ? data.sales : []
+  const text = await file.text()
+  const data = JSON.parse(text)
+  const sales: Sale[] = Array.isArray(data) ? (data as Sale[]) : Array.isArray(data?.sales) ? (data.sales as Sale[]) : []
       if (!sales.length) {
         setMsg('Arquivo inválido: não há vendas para importar.')
         return
@@ -299,8 +321,8 @@ export default function Sync() {
       if (!ok) return
 
       // Mescla simples: evita duplicar pela combinação (timestamp,userId,orderId,total)
-      const existing = await db.sales.toArray()
-      const setKey = new Set(existing.map((s: any) => `${s.timestamp}|${s.userId}|${s.orderId}|${s.total}`))
+  const existing = await db.sales.toArray() as Sale[]
+  const setKey = new Set(existing.map((s) => `${s.timestamp}|${s.userId}|${s.orderId}|${s.total}`))
       const toInsert = sales.filter((s) => !setKey.has(`${s.timestamp}|${s.userId}|${s.orderId}|${s.total}`))
       if (toInsert.length) await db.sales.bulkAdd(toInsert)
       setMsg(`Importação concluída. Novas vendas inseridas: ${toInsert.length} (de ${sales.length}).`)
@@ -317,9 +339,9 @@ export default function Sync() {
     try {
       setBusy(true)
       setMsg('')
-      const text = await file.text()
-      const data = JSON.parse(text)
-      const shifts: any[] = Array.isArray(data) ? data : Array.isArray(data?.shifts) ? data.shifts : []
+  const text = await file.text()
+  const data = JSON.parse(text)
+  const shifts: ShiftSummary[] = Array.isArray(data) ? (data as ShiftSummary[]) : Array.isArray(data?.shifts) ? (data.shifts as ShiftSummary[]) : []
       if (!shifts.length) {
         setMsg('Arquivo inválido: não há turnos para importar.')
         return
@@ -327,13 +349,16 @@ export default function Sync() {
       const ok = window.confirm(`Importar/mesclar ${shifts.length} turnos no banco local?`)
       if (!ok) return
 
-      const existing = await db.shifts.toArray()
-      const key = (s: any) => `${s.userId}|${s.startTime}`
+      const existing = await db.shifts.toArray() as ShiftSummary[]
+      const key = (s: ShiftSummary) => `${s.userId}|${s.startTime}`
       const existingKeys = new Set(existing.map(key))
-      const toInsert = shifts.filter((s) => !existingKeys.has(key(s))).map((s) => {
-        const { id, ...rest } = s || {}
-        return rest
-      })
+      const toInsert = shifts
+        .filter((s) => !existingKeys.has(key(s)))
+        .map((s) => {
+          const { id: _id, ...rest } = s
+          void _id
+          return rest
+        })
       if (toInsert.length) await db.shifts.bulkAdd(toInsert)
       setMsg(`Importação de turnos concluída. Novos: ${toInsert.length} (de ${shifts.length}).`)
       await refresh()
@@ -466,6 +491,7 @@ export default function Sync() {
       <div className="card" style={{ marginBottom: 12 }}>
         <h3 className="card-title">Exportações rápidas</h3>
         <div className="row" style={{ gap: 8 }}>
+          <button className="btn btn-primary" onClick={syncProdutosBackoffice} disabled={busy}>Sync produtos do Backoffice</button>
           <button className="btn" onClick={exportOnlyProducts} disabled={busy}>Exportar produtos (JSON)</button>
           <button className="btn" onClick={exportProductsCSV} disabled={busy}>Exportar produtos (CSV)</button>
           <button className="btn" onClick={exportOnlyUsers} disabled={busy}>Exportar usuários (JSON)</button>

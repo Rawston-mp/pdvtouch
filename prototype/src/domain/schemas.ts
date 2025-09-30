@@ -16,7 +16,7 @@ export const PaymentSchema = z.object({
   method: z.enum(['CASH', 'TEF', 'PIX', 'VOUCHER']),
   amount: z.number().nonnegative(),
   authCode: z.string().optional(),
-  meta: z.record(z.any()).optional()
+  meta: z.record(z.string(), z.any()).optional()
 })
 
 export const OrderSchema = z.object({

@@ -83,3 +83,34 @@ Instalação do app (PWA):
 - WS configurável via env (VITE_WS_HOST/VITE_WS_PORT).
 - `src/mock/devices.ts` lida com conexão, impressão e leitura de peso.
 
+### Integração com Backoffice (SSO mock)
+- PDV → Backoffice: o PDV gera um token simples (client-side) e abre o Backoffice em `/sso/consume` com `token` e `redirect`.
+- Backoffice → PDV: o PDV também aceita SSO; rota no PDV: `/sso/consume`.
+
+Configuração rápida (DEV):
+- No PDV, defina a URL do Backoffice em localStorage: `pdv.backofficeBaseUrl` (ex.: `http://localhost:5174`).
+- No Backoffice, defina a URL do PDV (sugestão): `pdv.baseUrl` (ex.: `http://localhost:5173`).
+
+Contrato do token (mock DEV):
+- Base64 de um JSON com `{ sub: string, role: string, exp: number }`.
+- Em produção, substituir por JWT emitido e validado no backend.
+
+Rotas de SSO:
+- Backoffice: `/sso/consume` (já implementada no AtendeTouch).
+- PDV: `/sso/consume` (consome token do Backoffice, abre sessão local e redireciona).
+
+Atalhos PDV para SSO (Admin):
+- Na página Admin, há botões para abrir módulos do Backoffice via SSO (Cadastros/Relatórios/etc.).
+- Um “pill” indica “Conectado ao Backoffice” quando a URL está configurada.
+
+### Sincronização de produtos do Backoffice (mock)
+- Na tela Sync do PDV existe o botão “Sync produtos do Backoffice”.
+- Requisitos: `pdv.backofficeBaseUrl` configurada; o Backoffice expõe `GET /public/api/produtos.json` (mock).
+- O PDV baixa, mapeia e faz `bulkPut` em `products` no IndexedDB.
+- Próximos passos sugeridos: delta via `updatedAt` (parâmetro `since`) e tratamento de inativos.
+
+### Fluxo de Vendas e atalhos
+- Finalização: atalhos F6 (dinheiro), F7 (PIX), F8 (TEF), Ctrl/⌘+Enter para confirmar, ESC para voltar.
+- PIX: tela dedicada com QR e “Confirmar recebimento (mock)”.
+- Comandas: modal de “Comandas abertas” com seções (em uso, aguardando pagamento/devolução, rascunhos).
+

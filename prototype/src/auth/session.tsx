@@ -1,5 +1,5 @@
 // src/auth/session.tsx
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react'
 import type { Role, User } from '../db'
 import { initDb } from '../db'
 import { findByPin } from '../db/users'
@@ -10,6 +10,7 @@ type Session = {
   user: SessionUser | null
   hasRole: (r: Role | Role[]) => boolean
   signInWithPin: (pin: string) => Promise<boolean>
+  signInSSO: (user: SessionUser) => void
   signOut: () => void
   isAuthenticated: boolean
 }
@@ -18,6 +19,7 @@ const SessionCtx = createContext<Session>({
   user: null,
   hasRole: () => false,
   signInWithPin: async () => false,
+  signInSSO: () => {},
   signOut: () => {},
   isAuthenticated: false,
 })
@@ -51,13 +53,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     })()
   }, [])
 
-  const hasRole = (r: Role | Role[]) => {
+  const hasRole = useCallback((r: Role | Role[]) => {
     if (!user) return false
     const arr = Array.isArray(r) ? r : [r]
     return arr.includes(user.role)
-  }
+  }, [user])
 
-  async function signInWithPin(pin: string) {
+  const signInWithPin = useCallback(async function signInWithPin(pin: string) {
     try {
       if (!pin || pin.length < 4) return false
 
@@ -84,24 +86,31 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       console.error('Erro no login:', error)
       return false
     }
-  }
+  }, [])
 
-  function signOut() {
+  const signOut = useCallback(function signOut() {
     setUser(null)
     localStorage.removeItem(LS_KEY)
-  }
+  }, [])
 
-  const isAuthenticated = !!user
+  function signInSSO(u: SessionUser) {
+    setUser(u)
+    localStorage.setItem(
+      LS_KEY,
+      JSON.stringify({ user: u, timestamp: Date.now() }),
+    )
+  }
 
   const value = useMemo(
     () => ({
       user,
       hasRole,
       signInWithPin,
+      signInSSO,
       signOut,
-      isAuthenticated,
+      isAuthenticated: !!user,
     }),
-    [user],
+    [user, hasRole, signInWithPin, signOut],
   )
 
   if (!isLoaded) {
@@ -111,6 +120,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   return <SessionCtx.Provider value={value}>{children}</SessionCtx.Provider>
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useSession() {
   return useContext(SessionCtx)
 }

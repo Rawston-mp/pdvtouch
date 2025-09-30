@@ -1,6 +1,6 @@
 // src/db/settings.ts
 import { db } from './index'
-import type { Settings, Printer, Destination, PrinterProfile } from './models'
+import type { Settings, Printer, PrinterProfile, Destination } from './index'
 
 /* ===================== Settings ===================== */
 
@@ -31,15 +31,12 @@ export async function listPrinters(): Promise<Printer[]> {
 }
 
 /** Compatível com o que o Configuracoes.tsx espera */
-export async function upsertPrinter(p: Printer): Promise<number> {
-  if (p.id) {
-    await db.printers.put(p)
-    return p.id
-  }
-  return db.printers.add(p)
+export async function upsertPrinter(p: Printer): Promise<string> {
+  await db.printers.put(p)
+  return p.id
 }
 
-export async function deletePrinter(id: number) {
+export async function deletePrinter(id: string) {
   await db.printers.delete(id)
 }
 
@@ -47,11 +44,11 @@ export async function deletePrinter(id: number) {
  * Atualiza TODAS as impressoras para usar o mesmo profileId.
  * Útil para “aplicar perfil em todas”.
  */
-export async function setAllPrintersProfile(profileId: number | null) {
+export async function setAllPrintersProfile(profileId: PrinterProfile | null) {
   const all = await db.printers.toArray()
   await db.transaction('rw', db.printers, async () => {
     for (const p of all) {
-      await db.printers.update(p.id!, { profileId: profileId ?? undefined })
+      await db.printers.update(p.id!, { profile: (profileId ?? p.profile) as PrinterProfile })
     }
   })
 }
@@ -63,39 +60,10 @@ export async function findPrinterByDestination(destCode: string): Promise<Printe
   const p = await db.printers.where('destination').equals(code).first()
   return p ?? null
 }
-
-/* ===================== Perfis de impressão ===================== */
-
-export async function listProfiles(): Promise<PrinterProfile[]> {
-  return db.profiles.toArray()
-}
-
-export async function saveProfile(profile: PrinterProfile) {
-  if (profile.id) {
-    await db.profiles.put(profile)
-    return profile.id
-  }
-  return db.profiles.add(profile)
-}
-
-export async function removeProfile(id: number) {
-  await db.profiles.delete(id)
-}
-
-/* ===================== Destinos/Rotas ===================== */
-
-export async function listDestinations(): Promise<Destination[]> {
-  return db.destinations.toArray()
-}
-
-export async function saveDestination(dest: Destination) {
-  if (dest.id) {
-    await db.destinations.put(dest)
-    return dest.id
-  }
-  return db.destinations.add(dest)
-}
-
-export async function removeDestination(id: number) {
-  await db.destinations.delete(id)
-}
+// Perfis/Destinos: stubs para compatibilidade com UI antiga
+export async function listProfiles(): Promise<PrinterProfile[]> { return [] }
+export async function saveProfile(_profile: PrinterProfile) { void _profile; return null }
+export async function removeProfile(_id: number) { void _id }
+export async function listDestinations(): Promise<Destination[]> { return [] }
+export async function saveDestination(_dest: Destination) { void _dest; return null }
+export async function removeDestination(_id: number) { void _id }

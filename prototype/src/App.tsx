@@ -18,6 +18,7 @@ import Configuracoes from './pages/Configuracoes'
 import AdminProdutos from './pages/AdminProdutos'
 import PixPage from './pages/Pix' // <<<<<< NOVO
 import Sobre from './pages/Sobre'
+import ConsumeFromBackoffice from './pages/SSO/ConsumeFromBackoffice'
 
 import './App.css'
 import { connectDevices, reconnectDevices } from './mock/devices'
@@ -197,6 +198,7 @@ function Layout() {
         <Routes>
           <Route path="/" element={<VendaRapida />} />
           <Route path="/venda" element={<VendaRapida />} />
+          <Route path="/sso/consume" element={<ConsumeFromBackoffice />} />
 
           {/* Finalizacao: bloqueado para balanças */}
           <Route
