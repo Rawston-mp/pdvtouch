@@ -93,13 +93,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem(LS_KEY)
   }, [])
 
-  function signInSSO(u: SessionUser) {
+  const signInSSO = useCallback(function signInSSO(u: SessionUser) {
     setUser(u)
     localStorage.setItem(
       LS_KEY,
       JSON.stringify({ user: u, timestamp: Date.now() }),
     )
-  }
+  }, [])
 
   const value = useMemo(
     () => ({
@@ -110,7 +110,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       signOut,
       isAuthenticated: !!user,
     }),
-    [user, hasRole, signInWithPin, signOut],
+    [user, hasRole, signInWithPin, signOut, signInSSO],
   )
 
   if (!isLoaded) {

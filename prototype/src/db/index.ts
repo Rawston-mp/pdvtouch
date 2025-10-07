@@ -135,6 +135,7 @@ class PDVDB extends Dexie {
 
   constructor() {
     super('pdvtouch-proto')
+    // Versão original (5) mantida para histórico; nova versão 6 limpa produtos e deixa catálogo vazio.
     this.version(5).stores({
       settings: 'id',
       printers: 'id',
@@ -147,8 +148,29 @@ class PDVDB extends Dexie {
       counters: 'id',
       closures: '++id, createdAt',
     })
+    this.version(6).stores({
+      settings: 'id',
+      printers: 'id',
+      products: 'id, code, category, byWeight',
+      users: 'id, role, active',
+      sales: '++id, orderId, timestamp, userId, status',
+      shifts: '++id, userId, startTime, status',
+      audits: '++id, ts',
+      outbox: '++id, createdAt, type',
+      counters: 'id',
+      closures: '++id, createdAt',
+    }).upgrade(async (tx) => {
+      try {
+        // Limpa produtos existentes para que passem a ser gerenciados exclusivamente no AtendeTouch.
+        await tx.table('products').clear()
+        // Marca em localStorage (best effort) que ocorreu limpeza (evita dúvida em suporte).
+        try { localStorage.setItem('pdv.migration.products.cleared', String(Date.now())) } catch (err) { void err }
+      } catch (err) {
+        console.warn('Falha ao limpar produtos na migração v6:', err)
+      }
+    })
     this.on('populate', async () => {
-      await seedAll(this)
+      await seedCore(this)
     })
   }
 }
@@ -178,7 +200,8 @@ export async function hashPin(pin: string): Promise<string> {
 }
 
 // Seeds
-async function seedAll(d: PDVDB) {
+// Seed somente de dados essenciais (sem produtos). Produtos serão trazidos via sync do Backoffice.
+async function seedCore(d: PDVDB) {
   // Settings
   await d.settings.put({
     id: 'cfg',
@@ -195,93 +218,7 @@ async function seedAll(d: PDVDB) {
     { id: 'bar01', name: 'Bar 01', destination: 'BAR', profile: 'ELGIN' },
   ])
 
-  // Products
-  await d.products.bulkPut([
-    {
-      id: 'p001',
-      name: 'Prato Executivo',
-      category: 'Pratos',
-      byWeight: false,
-      price: 24.9,
-      active: true,
-      code: 'PR001',
-    },
-    {
-      id: 'p002',
-      name: 'Guarnição do Dia',
-      category: 'Pratos',
-      byWeight: false,
-      price: 12.0,
-      active: true,
-      code: 'PR002',
-    },
-    {
-      id: 's001',
-      name: 'Mousse',
-      category: 'Sobremesas',
-      byWeight: false,
-      price: 7.5,
-      active: true,
-      code: 'SB001',
-    },
-    {
-      id: 's002',
-      name: 'Pudim',
-      category: 'Sobremesas',
-      byWeight: false,
-      price: 9.0,
-      active: true,
-      code: 'SB002',
-    },
-    {
-      id: 'b001',
-      name: 'Refrigerante Lata',
-      category: 'Bebidas',
-      byWeight: false,
-      price: 8.0,
-      active: true,
-      code: 'BD001',
-    },
-    {
-      id: 'b002',
-      name: 'Suco Natural 300ml',
-      category: 'Bebidas',
-      byWeight: false,
-      price: 8.0,
-      active: true,
-      code: 'BD002',
-    },
-    {
-      id: 'b003',
-      name: 'Água 500ml',
-      category: 'Bebidas',
-      byWeight: false,
-      price: 5.0,
-      active: true,
-      code: 'BD003',
-    },
-    {
-      id: 'g001',
-      name: 'Self-service por Kg',
-      category: 'Por Peso',
-      byWeight: true,
-      price: 0,
-      pricePerKg: 69.9,
-      active: true,
-      code: 'KG001',
-    },
-    {
-      id: 'g002',
-      name: 'Churrasco por Kg',
-      category: 'Por Peso',
-      byWeight: true,
-      price: 0,
-      pricePerKg: 89.9,
-      active: true,
-      code: 'KG002',
-    },
-  ])
-
+  // Products: nenhum seed → catálogo inicia vazio (será preenchido via Backoffice)
   // Users serão criados separadamente pelo initDb
 }
 
@@ -352,8 +289,8 @@ export async function initDb() {
   const userCount = await db.users.count()
 
   if (!cfg) {
-    console.log('🔄 Inicializando banco de dados pela primeira vez...')
-    await seedAll(db)
+    console.log('🔄 Inicializando banco de dados (seed core sem produtos)...')
+    await seedCore(db)
   } else if (userCount === 0) {
     console.log('🔄 Criando usuários padrão...')
     await seedUsers(db)
@@ -367,4 +304,23 @@ export async function initDb() {
   }
 
   console.log(`✅ Banco inicializado. Usuários: ${await db.users.count()}`)
+
+  // Salvaguarda: se ainda existirem produtos legados (seed antigo) e nenhum full sync foi feito, limpar agora.
+  try {
+    const lastFull = localStorage.getItem('pdv.sync.products.lastFull')
+    const clearedFlag = localStorage.getItem('pdv.migration.products.cleared')
+    const prodCount = await db.products.count()
+    if (!lastFull && !clearedFlag && prodCount > 0) {
+      // Examina alguns IDs para detectar padrão de seed antigo (p001, b001, s001, g001 ...)
+      const sample = await db.products.limit(5).toArray()
+      const seedLike = sample.length > 0 && sample.every(p => /^(p|b|s|g)\d{3}$/i.test(p.id))
+      if (seedLike) {
+        await db.products.clear()
+        localStorage.setItem('pdv.migration.products.cleared', String(Date.now()))
+        console.log('🧹 Catálogo legacy removido pós-migração (seed antigo).')
+      }
+    }
+  } catch (e) {
+    console.warn('Falha ao executar purga defensiva de produtos:', e)
+  }
 }

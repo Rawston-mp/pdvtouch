@@ -1,19 +1,17 @@
 // src/pages/Admin.tsx
 import { Link } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { resetAllData } from '../db/sales'
 
 import { useSession } from '../auth/session'
 import { mintSSO } from '../services/ssoClient'
+import { useIntegration } from '../integration/useIntegration'
 
 export default function Admin() {
   const { user, hasRole } = useSession()
-  const [backofficeUrl, setBackofficeUrl] = useState('')
+  const { backofficeUrl, setBackofficeUrl } = useIntegration()
 
-  useEffect(() => {
-    const saved = localStorage.getItem('pdv.backofficeBaseUrl') || ''
-    setBackofficeUrl(saved)
-  }, [])
+  useEffect(() => { /* valor já vem do contexto */ }, [])
 
   if (!hasRole('ADMIN') && !hasRole('GERENTE')) {
     return (
@@ -36,10 +34,6 @@ export default function Admin() {
         <h3>Cadastros & Configurações</h3>
         <ul style={{ lineHeight: 1.9 }}>
           <li>
-            <Link to="/admin/produtos">Produtos</Link>
-            <span style={{ opacity: .6 }}> — editar nome, preço/porkg, rota e código (leitor)</span>
-          </li>
-          <li>
             <Link to="/admin/usuarios">Usuários</Link>
             <span style={{ opacity: .6 }}> — perfis, PIN, ativação</span>
           </li>
@@ -48,6 +42,9 @@ export default function Admin() {
             <span style={{ opacity: .6 }}> — cabeçalho do cupom, impressoras/rotas, perfis de impressão</span>
           </li>
         </ul>
+        <div className="pill" style={{ marginTop: 8, background: '#fff3cd', border: '1px solid #ffe69c' }}>
+          A gestão de <b>Produtos</b> agora é realizada somente no Backoffice. Use o atalho de SSO abaixo.
+        </div>
       </div>
 
       <div style={{ marginTop: 24 }}>
@@ -81,13 +78,8 @@ export default function Admin() {
                   className="btn"
                   onClick={() => {
                     const v = (backofficeUrl || '').trim()
-                    if (!v) {
-                      localStorage.removeItem('pdv.backofficeBaseUrl')
-                      alert('URL removida.')
-                    } else {
-                      localStorage.setItem('pdv.backofficeBaseUrl', v)
-                      alert('URL do Backoffice salva.')
-                    }
+                    if (!v) alert('URL removida.')
+                    else alert('URL do Backoffice salva.')
                   }}
                 >Salvar</button>
                 <button
@@ -114,7 +106,7 @@ export default function Admin() {
             <button onClick={() => mintSSO('/relatorios/fechamentos')}>Backoffice: Relatórios</button>
           </li>
           <li>
-            <button onClick={() => mintSSO('/cadastro/produtos')}>Backoffice: Cadastros</button>
+            <button onClick={() => mintSSO('/cadastro/produtos')}>Backoffice: Cadastros (Produtos)</button>
           </li>
           <li>
             <button

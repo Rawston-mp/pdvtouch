@@ -4,6 +4,7 @@ import { db } from '../db'
 import { toCSV } from '../lib/csv'
 import { listSales } from '../db/sales'
 import { syncProdutosFromBackoffice } from '../services/syncClient'
+import { purgeLocalCatalog } from '../sync/catalogSync'
 import type { User, Product as PDVProduct, ShiftSummary, Sale } from '../db'
 
 type Counts = {
@@ -165,6 +166,22 @@ export default function Sync() {
     } catch (e) {
       console.error(e)
       setMsg('Falha ao sincronizar produtos do Backoffice.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function purgeCatalog() {
+    const ok = window.confirm('Limpar completamente o catálogo local? (Somente produtos)')
+    if (!ok) return
+    try {
+      setBusy(true)
+      await purgeLocalCatalog()
+      setMsg('Catálogo local limpo. Faça um sync para repovoar.')
+      await refresh()
+    } catch (e) {
+      console.error(e)
+      setMsg('Falha ao limpar catálogo.')
     } finally {
       setBusy(false)
     }
@@ -492,6 +509,7 @@ export default function Sync() {
         <h3 className="card-title">Exportações rápidas</h3>
         <div className="row" style={{ gap: 8 }}>
           <button className="btn btn-primary" onClick={syncProdutosBackoffice} disabled={busy}>Sync produtos do Backoffice</button>
+          <button className="btn" onClick={purgeCatalog} disabled={busy}>Limpar catálogo local</button>
           <button className="btn" onClick={exportOnlyProducts} disabled={busy}>Exportar produtos (JSON)</button>
           <button className="btn" onClick={exportProductsCSV} disabled={busy}>Exportar produtos (CSV)</button>
           <button className="btn" onClick={exportOnlyUsers} disabled={busy}>Exportar usuários (JSON)</button>

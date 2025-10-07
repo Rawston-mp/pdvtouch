@@ -29,8 +29,11 @@ export default function ConsumeFromBackoffice() {
   const nav = useNavigate()
   const { signInSSO } = useSession()
   const [sp] = useSearchParams()
+  const ranRef = React.useRef(false)
 
   React.useEffect(() => {
+    if (ranRef.current) return
+    ranRef.current = true
     const token = sp.get('token')
     const redirect = sp.get('redirect') || '/venda'
     const payload = parseToken(token)
@@ -52,7 +55,7 @@ export default function ConsumeFromBackoffice() {
     }
     try {
       signInSSO(u)
-      nav(redirect)
+      nav(redirect, { replace: true })
     } catch (err) {
       console.error(err)
       alert('Falha ao iniciar sessão SSO')

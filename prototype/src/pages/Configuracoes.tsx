@@ -38,6 +38,62 @@ export default function Configuracoes() {
   const [ttlMs, setTtlMs] = React.useState<number>(getLockTimings().ttlMs)
   const [hbMs, setHbMs] = React.useState<number>(getLockTimings().heartbeatMs)
   const [saved, setSaved] = React.useState<string>('')
+  // Integração Backoffice / PDV
+  const [backofficeUrl, setBackofficeUrl] = React.useState<string>('')
+  const [devPath, setDevPath] = React.useState<string>('')
+  const [integrationSaved, setIntegrationSaved] = React.useState<string>('')
+  const defaultDevPath = '\\\\wsl.localhost\\Ubuntu-20.04\\home\\rawston\\pdvtouch'
+
+  React.useEffect(() => {
+    // Carrega valores previamente salvos
+    try {
+      const bo = localStorage.getItem('pdv.backofficeBaseUrl') || ''
+      if (bo) setBackofficeUrl(bo)
+      const path = localStorage.getItem('pdv.devPath') || ''
+      if (path) setDevPath(path)
+      else setDevPath(defaultDevPath)
+    } catch (err) { void err }
+  }, [])
+
+  function saveIntegration() {
+    try {
+      const trimmed = (backofficeUrl || '').trim()
+      if (trimmed) {
+        localStorage.setItem('pdv.backofficeBaseUrl', trimmed)
+      } else {
+        localStorage.removeItem('pdv.backofficeBaseUrl')
+      }
+      if (devPath.trim()) {
+        localStorage.setItem('pdv.devPath', devPath.trim())
+      } else {
+        localStorage.removeItem('pdv.devPath')
+      }
+      setIntegrationSaved('Salvo!')
+      setTimeout(() => setIntegrationSaved(''), 1500)
+    } catch (err) {
+      void err
+      alert('Falha ao salvar integração')
+    }
+  }
+
+  function openBackoffice(path: string) {
+    const base = (backofficeUrl || '').trim()
+    if (!base) return alert('Defina a URL do Backoffice primeiro.')
+    const href = base.replace(/\/$/, '') + path
+    window.open(href, '_blank', 'noopener,noreferrer')
+  }
+
+  function copyDevPath() {
+    if (!devPath) return
+    try {
+      navigator.clipboard.writeText(devPath)
+      setIntegrationSaved('Copiado!')
+      setTimeout(() => setIntegrationSaved(''), 1200)
+    } catch (err) {
+      void err
+      alert('Não foi possível copiar.')
+    }
+  }
 
   function saveLockTimings() {
     if (!Number.isFinite(ttlMs) || ttlMs <= 0 || !Number.isFinite(hbMs) || hbMs <= 0) {
@@ -121,6 +177,46 @@ export default function Configuracoes() {
         <p className="muted" style={{ marginTop: 8 }}>
           Atual: TTL {getLockTimings().ttlMs} ms • Heartbeat {getLockTimings().heartbeatMs} ms
         </p>
+      </div>
+
+      <div className="card" style={{ maxWidth: 680, marginTop: 16 }}>
+        <h3 className="card-title">Integração Backoffice / Desenvolvimento</h3>
+        <p className="muted" style={{ marginBottom: 12 }}>
+          Configure a URL do Backoffice (AtendeTouch) para que atalhos e SSO funcionem. O caminho de desenvolvimento
+          (Windows/WSL) é apenas um lembrete rápido para abrir ou copiar o diretório compartilhado local.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <label style={{ display: 'grid', gap: 4 }}>
+            URL do Backoffice
+            <input
+              placeholder="http://localhost:5174"
+              value={backofficeUrl}
+              onChange={(e) => setBackofficeUrl(e.target.value)}
+              style={{ width: '100%' }}
+            />
+          </label>
+          <label style={{ display: 'grid', gap: 4 }}>
+            Caminho do Projeto PDV (WSL/Windows)
+            <input
+              value={devPath}
+              onChange={(e) => setDevPath(e.target.value)}
+              placeholder={defaultDevPath}
+              style={{ width: '100%' }}
+            />
+          </label>
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn" onClick={saveIntegration}>Salvar integração</button>
+            <button onClick={() => openBackoffice('')}>Abrir Backoffice (Home)</button>
+            <button onClick={() => openBackoffice('/cadastro/produtos')}>Abrir Backoffice (Produtos)</button>
+            <button onClick={() => openBackoffice('/estoque')}>Abrir Backoffice (Estoque)</button>
+            <button onClick={copyDevPath}>Copiar caminho PDV</button>
+            {integrationSaved && <span className="small" style={{ color: '#16a34a', alignSelf: 'center' }}>{integrationSaved}</span>}
+          </div>
+          <div className="muted small">
+            Status: {backofficeUrl.trim() ? <span style={{ color: '#16a34a' }}>Configurado</span> : 'Não configurado'}
+            {backofficeUrl.trim() && ' • Atalhos de SSO no Admin usarão esta URL.'}
+          </div>
+        </div>
       </div>
     </div>
   )

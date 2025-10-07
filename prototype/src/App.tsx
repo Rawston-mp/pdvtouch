@@ -2,6 +2,8 @@
 import React from 'react'
 import { NavLink, Routes, Route } from 'react-router-dom'
 import { SessionProvider, useSession } from './auth/session'
+import { IntegrationProvider } from './integration/IntegrationProvider'
+import { useIntegration } from './integration/useIntegration'
 import { RequireRole } from './utils/guard'
 import LoginPin from './components/LoginPin'
 
@@ -19,15 +21,25 @@ import AdminProdutos from './pages/AdminProdutos'
 import PixPage from './pages/Pix' // <<<<<< NOVO
 import Sobre from './pages/Sobre'
 import ConsumeFromBackoffice from './pages/SSO/ConsumeFromBackoffice'
+import { bootstrapCatalog, catalogStatus } from './sync/catalogSync'
 
 import './App.css'
 import { connectDevices, reconnectDevices } from './mock/devices'
 
 function Layout() {
   const { user, signOut } = useSession()
+  let integrationStatus: string = 'PDV não configurado'
+  try {
+    // Hook só funciona dentro do provider, mas Layout já está dentro (ver App abaixo)
+    // Porém, para evitar quebra caso a ordem mude, protegemos com try.
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const { backofficeUrl } = useIntegration()
+    if (backofficeUrl?.trim()) integrationStatus = 'PDV configurado'
+  } catch { /* noop */ }
   const [deferredPrompt, setDeferredPrompt] = React.useState<BeforeInstallPromptEvent | null>(null)
   const [swUpdate, setSwUpdate] = React.useState<boolean>(false)
   const [isStandalone, setIsStandalone] = React.useState<boolean>(false)
+  const [catAge, setCatAge] = React.useState<number | null>(null)
 
   function sair() {
     try {
@@ -89,6 +101,16 @@ function Layout() {
         })
       })
     })
+  }, [])
+
+  // Bootstrap catálogo (full ou delta) e monitor de idade
+  React.useEffect(() => {
+    bootstrapCatalog().catch(() => {/* ignore até configurar backoffice */})
+    const id = setInterval(() => {
+      const st = catalogStatus()
+      setCatAge(st.ageSeconds)
+    }, 5000)
+    return () => clearInterval(id)
   }, [])
 
   function onInstallClick() {
@@ -176,6 +198,7 @@ function Layout() {
         </div>
         <WsStatus />
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <small style={{ opacity: 0.6 }}>{integrationStatus}{catAge != null && ` • Catálogo ${catAge}s`}</small>
           <small style={{ opacity: 0.7 }}>
             {user ? `${user.name} — ${user.role}` : 'Sem sessão'}
           </small>
@@ -319,9 +342,11 @@ function Layout() {
 
 export default function App() {
   return (
-    <SessionProvider>
-      <Layout />
-    </SessionProvider>
+    <IntegrationProvider>
+      <SessionProvider>
+        <Layout />
+      </SessionProvider>
+    </IntegrationProvider>
   )
 }
 
