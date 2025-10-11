@@ -11,6 +11,33 @@ export type Settings = {
   cnpj: string
   addressLine1: string
   addressLine2: string
+  // Configurações Fiscais NFC-e
+  inscricaoEstadual?: string
+  cnae?: string
+  regimeTributario?: 'SIMPLES_NACIONAL' | 'REGIME_NORMAL' | 'MEI'
+  certificadoDigital?: {
+    fileName?: string
+    password?: string
+    validUntil?: string
+    subject?: string
+  }
+  csc?: {
+    id: string
+    codigo: string
+    ativo: boolean
+  }[]
+  nfceConfig?: {
+    ambiente: 'PRODUCAO' | 'HOMOLOGACAO'
+    serie: number
+    proximoNumero: number
+    habilitadoSefaz: boolean
+    dataHabilitacao?: string
+  }
+  contabilConfig?: {
+    exportarSped: boolean
+  enviarXmlContador: boolean
+    emailContador?: string
+  }
 }
 
 export type Printer = {
@@ -29,6 +56,22 @@ export type Product = {
   pricePerKg?: number
   code?: string
   active: boolean
+  // Novos campos para gestão completa
+  unit?: string
+  profitMargin?: number
+  costPrice?: number
+  mcm?: number
+  salePrice?: number
+  // Campos fiscais
+  cfop?: string
+  cst?: string
+  ncm?: string
+  icmsRate?: number
+  icmsBase?: number
+  pisCst?: string
+  pisRate?: number
+  cofinsCst?: string
+  cofinsRate?: number
 }
 
 export type Role = 'ADMIN' | 'BALANÇA A' | 'BALANÇA B' | 'GERENTE' | 'CAIXA' | 'ATENDENTE'
@@ -86,7 +129,7 @@ class PDVDB extends Dexie {
 
   constructor() {
     super('pdvtouch-proto')
-    this.version(4).stores({
+    this.version(5).stores({
       settings: 'id',
       printers: 'id',
       products: 'id, code, category, byWeight',

@@ -23,6 +23,38 @@ export interface Product {
   route?: PrintRoute
   /** NOVO: código de barras / PLU / SKU para leitor */
   code?: string | null
+  /** NOVO: por peso */
+  byWeight?: boolean
+  /** NOVO: produto ativo */
+  active?: boolean
+  /** NOVO: unidade de medida */
+  unit?: string
+  /** NOVO: margem de lucro % */
+  profitMargin?: number
+  /** NOVO: custo inicial */
+  costPrice?: number
+  /** NOVO: múltiplo de compra */
+  mcm?: number
+  /** NOVO: preço de venda calculado */
+  salePrice?: number
+  /** FISCAL - CFOP */
+  cfop?: string
+  /** FISCAL - CST/CSOSN */
+  cst?: string
+  /** FISCAL - NCM */
+  ncm?: string
+  /** FISCAL - Alíquota ICMS */
+  icmsRate?: number
+  /** FISCAL - Base de cálculo ICMS */
+  icmsBase?: number
+  /** FISCAL - Situação tributária PIS */
+  pisCst?: string
+  /** FISCAL - Alíquota PIS */
+  pisRate?: number
+  /** FISCAL - Situação tributária COFINS */
+  cofinsCst?: string
+  /** FISCAL - Alíquota COFINS */
+  cofinsRate?: number
 }
 
 export interface OrderItem {

@@ -6,7 +6,7 @@ import { useSession } from '../auth/session'
 import { loadCartDraft, saveCartDraft, removeCartDraft, clearCurrentOrderId, type CartItem, acquireOrderLock, isOrderLockedByOther, renewOrderLock, releaseOrderLock, getOrderLockInfo, getLockTimings } from '../lib/cartStorage'
 import { printText } from '../mock/devices'
 import { addSale } from '../db/sales'
-import { markAwaitingReturn } from '../lib/comandaUsage'
+import { clearUsage } from '../lib/comandaUsage'
 
 type DocType = 'NAO_FISCAL' | 'NFCE'
 
@@ -281,13 +281,15 @@ export default function Finalizacao() {
       printText('fiscal01',
         `[MOCK] Confirmação: R$ ${money(total)} | CASH ${money(vCash)} | TEF ${money(vTef)} | DOC ${doc}${idFiscal ? ' (' + idFiscal + ')' : ''}`
       )
-      // Marca comanda como aguardando devolução no caixa
-      try { markAwaitingReturn(orderId, owner) } catch (err) { void err }
-
+      
+      // Limpa completamente a comanda após pagamento bem-sucedido
+      // Permite reutilização imediata da mesma comanda
       removeCartDraft(orderId)
       try { clearCurrentOrderId(owner) } catch (err) { void err }
       try { releaseOrderLock(orderId, owner) } catch (err) { void err }
-      alert('Pagamento confirmado! Comanda aguardando devolução no caixa.')
+      try { clearUsage(orderId) } catch (err) { void err } // Remove from AWAITING_PAYMENT/RETURN states
+      
+      alert('Pagamento confirmado! Comanda finalizada e disponível para reutilização.')
       nav('/relatorioxz')
     } catch (error: unknown) {
       console.error('Erro ao salvar venda:', error)

@@ -4,6 +4,7 @@ import type { Product } from '../db'
 import { listProducts, upsertProduct, deleteProduct } from '../db/products'
 import { useSession } from '../auth/session'
 import { parseCSV, toCSV } from '../lib/csv'
+import ProductFormTabs from '../components/ProductFormTabs'
 
 type Category = Product['category']
 const CATEGORIES: { key: Category; label: string }[] = [
@@ -13,7 +14,7 @@ const CATEGORIES: { key: Category; label: string }[] = [
   { key: 'Por Peso', label: 'Por Peso' },
 ]
 
-const money = (n: any) => (Number(n || 0)).toFixed(2)
+const money = (n: number | string | null | undefined) => (Number(n || 0)).toFixed(2)
 const parseNum = (v: string | number | null | undefined, fallback = 0): number => {
   if (typeof v === 'number') return Number.isFinite(v) ? v : fallback
   if (!v) return fallback
@@ -31,26 +32,41 @@ export default function AdminProdutos() {
   const [cat, setCat] = useState<Category | 'Todas'>('Todas')
   const [activeOnly, setActiveOnly] = useState<boolean>(true)
 
-  // Formulário
-  type FormState = {
-    id?: string
-    name: string
-    category: Category
-    byWeight: boolean
-    price: string
-    pricePerKg: string
-    code: string
-    active: boolean
+  // Formulário - Compatível com ExtendedProduct
+  type FormState = Partial<Product> & {
+    // Override para campos que podem ser strings durante edição
+    price?: number
+    pricePerKg?: number
+    costPrice?: number
+    profitMargin?: number
+    salePrice?: number
+    mcm?: number
+    icmsRate?: number
+    pisRate?: number
+    cofinsRate?: number
   }
+  
   const emptyForm: FormState = {
     id: undefined,
     name: '',
     category: 'Pratos',
     byWeight: false,
-    price: '0',
-    pricePerKg: '0',
+    price: 0,
+    pricePerKg: 0,
     code: '',
     active: true,
+    unit: 'UN',
+    costPrice: 0,
+    profitMargin: 0,
+    mcm: 1,
+    cfop: '5102',
+    cst: '102',
+    ncm: '',
+    icmsRate: 0,
+    pisCst: '49',
+    pisRate: 0,
+    cofinsCst: '49',
+    cofinsRate: 0,
   }
   const [form, setForm] = useState<FormState>(emptyForm)
   const [editing, setEditing] = useState<boolean>(false)
@@ -104,26 +120,40 @@ export default function AdminProdutos() {
     setEditing(true)
     setError('')
     setForm({
-      id: p.id,
-      name: p.name,
-      category: p.category,
+      ...p,
+      // Campos que podem estar undefined devem ter valores padrão
+      name: p.name || '',
+      category: p.category || 'Pratos',
       byWeight: !!p.byWeight,
-      price: String(p.price ?? 0),
-      pricePerKg: String(p.pricePerKg ?? 0),
+      price: p.price ?? 0,
+      pricePerKg: p.pricePerKg ?? 0,
       code: p.code || '',
-      active: !!p.active,
+      active: p.active !== false,
+      unit: p.unit || 'UN',
+      costPrice: p.costPrice || 0,
+      profitMargin: p.profitMargin || 0,
+      mcm: p.mcm || 1,
+      salePrice: p.salePrice || p.price || 0,
+      cfop: p.cfop || '5102',
+      cst: p.cst || '102',
+      ncm: p.ncm || '',
+      icmsRate: p.icmsRate || 0,
+      pisCst: p.pisCst || '49',
+      pisRate: p.pisRate || 0,
+      cofinsCst: p.cofinsCst || '49',
+      cofinsRate: p.cofinsRate || 0,
     })
   }
 
   async function save() {
     try {
       if (!canEdit) return
-      const name = form.name.trim()
+      const name = (form.name || '').trim()
       if (!name) return setError('Informe o nome do produto.')
-      const category = form.category
+      const category = form.category || 'Pratos'
       const byWeight = !!form.byWeight
-      const price = byWeight ? 0 : Math.max(0, parseNum(form.price, 0))
-      const pricePerKg = byWeight ? Math.max(0, parseNum(form.pricePerKg, 0)) : 0
+      const price = byWeight ? 0 : Math.max(0, form.price || 0)
+      const pricePerKg = byWeight ? Math.max(0, form.pricePerKg || 0) : 0
       if (!byWeight && price <= 0) return setError('Preço unitário deve ser maior que zero.')
       if (byWeight && pricePerKg <= 0)
         return setError('Preço por Kg deve ser maior que zero para itens por peso.')
@@ -137,8 +167,22 @@ export default function AdminProdutos() {
         byWeight,
         price,
         pricePerKg,
-        code: form.code.trim() || undefined,
-        active: !!form.active,
+        code: (form.code || '').trim() || undefined,
+        active: form.active !== false,
+        // Novos campos
+        unit: form.unit || 'UN',
+        costPrice: form.costPrice || 0,
+        profitMargin: form.profitMargin || 0,
+        mcm: form.mcm || 1,
+        salePrice: form.salePrice || price,
+        cfop: form.cfop || '5102',
+        cst: form.cst || '102',
+        ncm: form.ncm || '',
+        icmsRate: form.icmsRate || 0,
+        pisCst: form.pisCst || '49',
+        pisRate: form.pisRate || 0,
+        cofinsCst: form.cofinsCst || '49',
+        cofinsRate: form.cofinsRate || 0,
       }
       await upsertProduct(prod)
       resetForm()
@@ -416,11 +460,13 @@ export default function AdminProdutos() {
           <table className="table">
             <thead>
               <tr>
-                <th style={{ width: '28%' }}>Nome</th>
+                <th style={{ width: '20%' }}>Nome</th>
                 <th>Categoria</th>
-                <th>Tipo</th>
-                <th>Preço</th>
-                <th>Preço/kg</th>
+                <th>Unidade</th>
+                <th>Custo</th>
+                <th>Margem</th>
+                <th>Preço Venda</th>
+                <th>CFOP</th>
                 <th>Código</th>
                 <th>Status</th>
                 <th style={{ width: 210 }} />
@@ -429,11 +475,28 @@ export default function AdminProdutos() {
             <tbody>
               {filtered.map((p) => (
                 <tr key={p.id}>
-                  <td>{p.name}</td>
+                  <td>
+                    <div>
+                      <strong>{p.name}</strong>
+                      {p.byWeight && <small className="muted"> (Por Peso)</small>}
+                    </div>
+                  </td>
                   <td>{p.category}</td>
-                  <td>{p.byWeight ? 'Por Peso' : 'Unitário'}</td>
-                  <td>{p.byWeight ? '-' : `R$ ${money(p.price)}`}</td>
-                  <td>{p.byWeight ? `R$ ${money(p.pricePerKg)}` : '-'}</td>
+                  <td>{p.unit || 'UN'}</td>
+                  <td>{p.costPrice ? `R$ ${money(p.costPrice)}` : '-'}</td>
+                  <td>{p.profitMargin ? `${p.profitMargin.toFixed(1)}%` : '-'}</td>
+                  <td>
+                    {p.byWeight ? (
+                      <span>R$ {money(p.pricePerKg)}/kg</span>
+                    ) : (
+                      <span>R$ {money(p.price)}</span>
+                    )}
+                  </td>
+                  <td>
+                    <span className="pill small" style={{ fontSize: '10px' }}>
+                      {p.cfop || '5102'}
+                    </span>
+                  </td>
                   <td>{p.code || '-'}</td>
                   <td>
                     <span className={`pill small ${p.active ? 'success' : ''}`}>
@@ -460,107 +523,23 @@ export default function AdminProdutos() {
         )}
       </div>
 
-      {/* Formulário */}
+      {/* Formulário Moderno com Abas */}
       {editing && (
-        <div className="card">
-          <h3 className="card-title">
-            {form.id ? 'Editar produto' : 'Novo produto'}
-          </h3>
-
+        <>
           {!!error && (
-            <div className="pill" style={{ background: '#fdecea', borderColor: '#f44336' }}>
+            <div className="pill" style={{ background: '#fdecea', borderColor: '#f44336', marginBottom: 16 }}>
               {error}
             </div>
           )}
-
-          <div className="grid grid-3" style={{ alignItems: 'end' }}>
-            <div>
-              <label className="small muted">Nome</label>
-              <input
-                value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                style={{ width: '100%' }}
-              />
-            </div>
-            <div>
-              <label className="small muted">Categoria</label>
-              <select
-                value={form.category}
-                onChange={(e) => setForm((f) => ({ ...f, category: e.target.value as Category }))}
-              >
-                {CATEGORIES.map((c) => (
-                  <option key={c.key} value={c.key}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <label className="small" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <input
-                type="checkbox"
-                checked={form.byWeight}
-                onChange={(e) => setForm((f) => ({ ...f, byWeight: e.target.checked }))}
-              />
-              Por peso (Kg)
-            </label>
-          </div>
-
-          <div className="grid grid-3" style={{ alignItems: 'end', marginTop: 8 }}>
-            <div>
-              <label className="small muted">Preço unitário</label>
-              <input
-                value={form.price}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, price: e.target.value.replace(/[^\d.,]/g, '') }))
-                }
-                style={{ width: '100%', textAlign: 'right' }}
-                disabled={form.byWeight}
-              />
-            </div>
-
-            <div>
-              <label className="small muted">Preço por Kg</label>
-              <input
-                value={form.pricePerKg}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, pricePerKg: e.target.value.replace(/[^\d.,]/g, '') }))
-                }
-                style={{ width: '100%', textAlign: 'right' }}
-                disabled={!form.byWeight}
-              />
-            </div>
-
-            <div>
-              <label className="small muted">Código (opcional)</label>
-              <input
-                value={form.code}
-                onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
-                style={{ width: '100%' }}
-                placeholder="Usado pelo leitor/PLU"
-              />
-            </div>
-          </div>
-
-          <div className="row" style={{ gap: 8, marginTop: 12 }}>
-            <label className="small" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <input
-                type="checkbox"
-                checked={form.active}
-                onChange={(e) => setForm((f) => ({ ...f, active: e.target.checked }))}
-              />
-              Ativo
-            </label>
-
-            <div style={{ flex: 1 }} />
-
-            <button className="btn" onClick={resetForm}>
-              Cancelar
-            </button>
-            <button className="btn btn-primary" onClick={save} disabled={!canEdit}>
-              Salvar
-            </button>
-          </div>
-        </div>
+          
+          <ProductFormTabs
+            product={form}
+            onChange={setForm}
+            onSave={save}
+            onCancel={resetForm}
+            isEditing={!!form.id}
+          />
+        </>
       )}
     </div>
   )

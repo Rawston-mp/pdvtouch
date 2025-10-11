@@ -1,6 +1,11 @@
 // src/pages/VendaRapida.tsx
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { usePDVKeyboard } from '../hooks/useKeyboard'
+import { useToast } from '../hooks/useToast'
+import KeyboardHelp from '../components/KeyboardHelp'
+import CartSidebar from '../components/CartSidebar'
+import QuickActionsToolbar from '../components/QuickActionsToolbar'
 
 import { listProducts } from '../db/products'
 import { db } from '../db'
@@ -81,9 +86,13 @@ export default function VendaRapida() {
 
   // estado do carrinho
   const [cart, setCart] = useState<CartItem[]>([])
-  const [quickQty, setQuickQty] = useState<string>('0')
+  const [quickQty, setQuickQty] = useState<string>('1')  // quantidade padrão = 1 para melhor UX
   const [pesoItemId, setPesoItemId] = useState<string | null>(null)
   const [showLocks, setShowLocks] = useState<boolean>(false)
+  
+  // UI states
+  const [showHelp, setShowHelp] = useState(false)
+  const toast = useToast()
 
   // comanda
   const [orderId, setOrderId] = useState<number | null>(null)
@@ -390,6 +399,78 @@ export default function VendaRapida() {
   // ---------------------- UI ----------------------
   const isBalanca = isBalancaRole
 
+  // Configurar atalhos de teclado
+  const keyboardActions = {
+    onHelp: () => setShowHelp(true),
+    onNewSale: () => {
+      if (cart.length > 0) {
+        if (confirm('Descartar venda atual e iniciar nova?')) {
+          clearOrder()
+        }
+      } else {
+        setUnifiedInput('')
+        setActiveCat('Pratos')
+        toast.info('Nova Venda', 'Digite o número da comanda')
+      }
+    },
+    onSearch: () => {
+      const searchInput = document.querySelector('input[placeholder*="Buscar"]') as HTMLInputElement
+      searchInput?.focus()
+    },
+    onWeight: () => {
+      if (orderActive) {
+        lerPeso()
+      } else {
+        toast.warning('Sem venda ativa', 'Inicie uma venda para usar a balança')
+      }
+    },
+    onFinalize: () => {
+      if (orderActive && cart.length > 0) {
+        nav('/finalizacao')
+      } else if (!orderActive) {
+        toast.warning('Sem venda ativa', 'Inicie uma venda primeiro')
+      } else {
+        toast.warning('Carrinho vazio', 'Adicione produtos para finalizar')
+      }
+    },
+    onCancel: () => {
+      if (showHelp) {
+        setShowHelp(false)
+      } else if (orderActive && cart.length > 0) {
+        if (confirm('Cancelar venda atual?')) {
+          clearOrder()
+        }
+      }
+    },
+    // Quick Actions F2-F7
+    onQuick1: () => {
+      const product = catalog.find(p => p.id === 'p001') // Prato Executivo
+      if (product) addProduct(product)
+    },
+    onQuick2: () => {
+      const product = catalog.find(p => p.id === 'b001') // Refrigerante Lata
+      if (product) addProduct(product)
+    },
+    onQuick3: () => {
+      const product = catalog.find(p => p.id === 'b003') // Água 500ml
+      if (product) addProduct(product)
+    },
+    onQuick4: () => {
+      const product = catalog.find(p => p.id === 'g001') // Self-service por Kg
+      if (product) addProduct(product)
+    },
+    onQuick5: () => {
+      const product = catalog.find(p => p.id === 's001') // Mousse
+      if (product) addProduct(product)
+    },
+    onQuick6: () => {
+      const product = catalog.find(p => p.id === 'p002') // Guarnição
+      if (product) addProduct(product)
+    }
+  }
+  
+  const shortcuts = usePDVKeyboard(keyboardActions)
+
   return (
     <div className="container">
       {/* Aviso especial para balanças */}
@@ -416,6 +497,9 @@ export default function VendaRapida() {
           </div>
         </div>
       )}
+
+      {/* Quick Actions Toolbar - Produtos mais vendidos */}
+      <QuickActionsToolbar onProductSelect={addProduct} />
 
       {/* Campo único de comanda/PLU */}
       <div className="card" style={{ marginBottom: 12 }}>
@@ -506,7 +590,7 @@ export default function VendaRapida() {
           {CATEGORIES.map((c) => (
             <button
               key={c.key}
-              className={`pill ${activeCat === c.key ? 'active' : ''}`}
+              className={`pill btn-touch ${activeCat === c.key ? 'active' : ''}`}
               onClick={() => setActiveCat(c.key)}
             >
               {c.label}
@@ -515,7 +599,7 @@ export default function VendaRapida() {
         </div>
       </div>
 
-      <div className="grid grid-2" style={{ alignItems: 'start' }}>
+      <div className="venda-layout" style={{ marginRight: '400px' }}>
         {/* Modal de Locks */}
         {showLocks && (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => setShowLocks(false)}>
@@ -597,151 +681,28 @@ export default function VendaRapida() {
           </div>
         </section>
 
-        {/* Lateral */}
-        <aside className="card cart cart-sticky">
-          <div className="row" style={{ justifyContent: 'space-between' }}>
-            <h3 className="card-title" style={{ marginBottom: 6 }}>
-              Quantidade rápida (itens unitários)
-            </h3>
-            <input
-              className="input-lg"
-              style={{ width: 120, textAlign: 'center' }}
-              value={quickQty}
-              onChange={(e) => setQuickQty(e.target.value.replace(/[^\d]/g, '') || '0')}
-              disabled={!orderActive}
-            />
-          </div>
-
-          <div className="keypad" style={{ marginBottom: 12 }}>
-            {['7', '8', '9', '4', '5', '6', '1', '2', '3', '.', '0', 'B'].map((k) => (
-              <button key={k} disabled={!orderActive} onClick={() => onKeypad(k === '.' ? '' : k)}>
-                {k === 'B' ? '⌫' : k}
-              </button>
-            ))}
-          </div>
-
-          <div className="row" style={{ gap: 8, marginBottom: 18 }}>
-            <button className="btn btn-primary" disabled={!orderActive} onClick={applyQuickQty}>
-              Confirmar
-            </button>
-            <button disabled={!orderActive} onClick={() => onKeypad('C')}>
-              Limpar
-            </button>
-          </div>
-
-          {/* Peso */}
-          <div className="card" style={{ padding: 12, marginBottom: 18 }}>
-            <div className="row" style={{ justifyContent: 'space-between', marginBottom: 8 }}>
-              <strong>Peso (balança)</strong>
-              <span className="small muted">
-                Mock WS: <code>npm run mock:ws</code>
-              </span>
-            </div>
-            <div className="row" style={{ gap: 8 }}>
-              <button className="btn btn-primary" disabled={!orderActive} onClick={lerPeso}>
-                Ler peso (mock)
-              </button>
-              <select
-                disabled={!orderActive}
-                value={pesoItemId ?? ''}
-                onChange={(e) => setPesoItemId(e.target.value || null)}
-              >
-                <option value="">Selecione um item por peso</option>
-                {cart
-                  .filter((x) => x.unit === 'kg')
-                  .map((x) => (
-                    <option key={x.id} value={x.id}>
-                      {x.name}
-                    </option>
-                  ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Carrinho */}
-          <h3 className="card-title" style={{ marginBottom: 10 }}>
-            Carrinho
-          </h3>
-          {!cart.length && <div className="muted">Nenhum item.</div>}
-
-          {cart.map((it) => (
-            <div className="cart-item" key={it.id}>
-              <div>
-                <div style={{ fontWeight: 700 }}>{it.name}</div>
-                <div className="small muted">
-                  {it.unit === 'kg'
-                    ? `${num(it.qty).toFixed(3)} kg × R$ ${fmt(it.price)}`
-                    : `${num(it.qty)} un × R$ ${fmt(it.price)}`}
-                </div>
-              </div>
-
-              {it.unit === 'unit' ? (
-                <div className="row">
-                  <button disabled={!orderActive} onClick={() => dec(it)}>
-                    -
-                  </button>
-                  <button disabled={!orderActive} onClick={() => inc(it)}>
-                    +
-                  </button>
-                </div>
-              ) : (
-                <div className="small muted" style={{ textAlign: 'right' }}>
-                  R$ {fmt(num(it.price) * num(it.qty))}
-                </div>
-              )}
-
-              <div>
-                <button className="btn" disabled={!orderActive} onClick={() => removeItem(it)}>
-                  Remover
-                </button>
-              </div>
-            </div>
-          ))}
-
-          <div className="cart-total">
-            <span>Total</span>
-            <span>R$ {fmt(total)}</span>
-          </div>
-
-          <div className="row" style={{ gap: 8, marginTop: 12 }}>
-            <button disabled={!orderActive} onClick={clear}>
-              Limpar
-            </button>
-
-            {canFinalize ? (
-              <button
-                className="btn btn-primary"
-                style={{ flex: 1 }}
-                disabled={!orderActive}
-                onClick={goToCheckout}
-              >
-                Ir para Finalização (F4)
-              </button>
-            ) : (
-              <button
-                className="btn btn-primary"
-                style={{ flex: 1 }}
-                disabled={!orderActive}
-                onClick={nextClient}
-                title="Salva rascunho da comanda e prepara a balança para o próximo cliente (ESC)"
-              >
-                Próximo cliente (ESC)
-              </button>
-            )}
-          </div>
-
-          <div className="row" style={{ gap: 8, marginTop: 8 }}>
-            <button
-              disabled={!orderActive}
-              onClick={() => printText('fiscal01', 'Cupom (mock)')}
-              className="btn"
-            >
-              Imprimir cupom (mock)
-            </button>
-            {/* Opcional: botão para excluir rascunho da comanda */}
-            {/* <button disabled={!orderActive} onClick={deleteDraftPermanently}>Apagar rascunho</button> */}
-          </div>
-        </aside>
+        {/* Carrinho Lateral Fixo */}
+        <CartSidebar
+          cart={cart}
+          total={total}
+          orderActive={orderActive}
+          quickQty={quickQty}
+          pesoItemId={pesoItemId}
+          lockSeconds={lockSeconds}
+          lockOwner={lockOwner}
+          canFinalize={canFinalize}
+          onQuantityChange={setQuickQty}
+          onKeypad={onKeypad}
+          onApplyQuickQty={applyQuickQty}
+          onIncrement={inc}
+          onDecrement={dec}
+          onRemoveItem={removeItem}
+          onClearCart={clear}
+          onReadWeight={lerPeso}
+          onWeightItemChange={setPesoItemId}
+          onFinalize={goToCheckout}
+          onNext={nextClient}
+        />
       </div>
     </div>
   )
@@ -962,6 +923,13 @@ function LocksList({ stationNs, onOpen }: { stationNs?: string, onOpen: (orderId
           </div>
         </div>
       )}
+      
+      {/* Modal de Ajuda dos Atalhos */}
+      <KeyboardHelp 
+        shortcuts={shortcuts} 
+        isOpen={showHelp} 
+        onClose={() => setShowHelp(false)}
+      />
     </div>
   )
 }

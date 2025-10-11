@@ -1,6 +1,9 @@
 // src/components/LoginPin.tsx
 import React, { useEffect, useRef, useState } from 'react'
 import { useSession } from '../auth/session'
+import { LoadingButton } from './Loading'
+import { useLoading } from '../hooks/useLoading'
+import { useToast } from '../hooks/useToast'
 
 /**
  * Modal de PIN.
@@ -10,7 +13,8 @@ import { useSession } from '../auth/session'
 export default function LoginPin() {
   const { user, signInWithPin } = useSession()
   const [pin, setPin] = useState('')
-  const [loading, setLoading] = useState(false)
+  const { loading, withLoading } = useLoading()
+  const toast = useToast()
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -30,40 +34,50 @@ export default function LoginPin() {
       setError('Informe o PIN')
       return
     }
-    setLoading(true)
+    
     try {
-      const logged = await signInWithPin(p)
-      if (!logged) {
-        setError('PIN inválido ou usuário inativo')
-      } else {
-        // sucesso: o App vai re-renderizar sem o modal (user presente)
-      }
+      await withLoading(async () => {
+        const logged = await signInWithPin(p)
+        if (!logged) {
+          setError('PIN inválido ou usuário inativo')
+          toast.error('Login falhado', 'PIN inválido ou usuário inativo')
+        } else {
+          toast.success('Login realizado', `Bem-vindo ao sistema!`)
+        }
+        return logged
+      })
     } catch {
       setError('Falha ao autenticar')
-    } finally {
-      setLoading(false)
+      toast.error('Erro de conexão', 'Falha ao conectar com o sistema')
     }
   }
 
   return (
     <div style={backdrop}>
       <div style={modal}>
-        <h2 style={{ marginTop: 0 }}>Digite seu PIN</h2>
+        <h2 style={{ marginTop: 0, textAlign: 'center', fontSize: '24px' }}>Digite seu PIN</h2>
         <form onSubmit={onSubmit} style={{ display: 'grid', gap: 10 }}>
           <input
             ref={inputRef}
             type="password"
             inputMode="numeric"
             pattern="\d*"
-            placeholder="PIN"
+            placeholder="Digite seu PIN"
             value={pin}
             onChange={(e) => setPin(e.target.value)}
             style={inp}
+            className="input-lg"
           />
           {error && <div style={err}>{error}</div>}
-          <button type="submit" disabled={loading} style={btn}>
-            {loading ? 'Entrando...' : 'Entrar'}
-          </button>
+          <LoadingButton 
+            type="submit" 
+            loading={loading} 
+            loadingText="🔄 Entrando..."
+            style={btn} 
+            className="btn-touch-lg btn-primary"
+          >
+            🔐 Entrar
+          </LoadingButton>
 
           <small style={{ opacity: 0.7 }}>
             Dicas (seed): ADMIN 1111 • BALANÇA A 2222 • BALANÇA B 2233 • GERENTE 3333 • CAIXA 4444 •

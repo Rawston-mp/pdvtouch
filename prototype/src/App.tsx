@@ -2,6 +2,7 @@
 import React from 'react'
 import { NavLink, Routes, Route } from 'react-router-dom'
 import { SessionProvider, useSession } from './auth/session'
+import { ToastProvider } from './components/ToastProvider'
 import { RequireRole } from './utils/guard'
 import LoginPin from './components/LoginPin'
 
@@ -16,6 +17,7 @@ import Admin from './pages/Admin'
 import AdminUsuarios from './pages/AdminUsuarios'
 import Configuracoes from './pages/Configuracoes'
 import AdminProdutos from './pages/AdminProdutos'
+import AdminFiscal from './pages/AdminFiscal'
 import PixPage from './pages/Pix' // <<<<<< NOVO
 import Sobre from './pages/Sobre'
 
@@ -299,6 +301,14 @@ function Layout() {
             }
           />
           <Route
+            path="/admin/fiscal"
+            element={
+              <RequireRole roles={['ADMIN']}>
+                <AdminFiscal />
+              </RequireRole>
+            }
+          />
+          <Route
             path="/configuracoes"
             element={
               <RequireRole roles={['ADMIN', 'GERENTE']}>
@@ -317,9 +327,11 @@ function Layout() {
 
 export default function App() {
   return (
-    <SessionProvider>
-      <Layout />
-    </SessionProvider>
+    <ToastProvider>
+      <SessionProvider>
+        <Layout />
+      </SessionProvider>
+    </ToastProvider>
   )
 }
 

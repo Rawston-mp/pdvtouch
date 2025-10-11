@@ -29,11 +29,15 @@ export default function Admin() {
         <ul style={{ lineHeight: 1.9 }}>
           <li>
             <Link to="/admin/produtos">Produtos</Link>
-            <span style={{ opacity: .6 }}> — editar nome, preço/porkg, rota e código (leitor)</span>
+            <span style={{ opacity: .6 }}> — cadastro completo com precificação e configurações fiscais</span>
           </li>
           <li>
             <Link to="/admin/usuarios">Usuários</Link>
             <span style={{ opacity: .6 }}> — perfis, PIN, ativação</span>
+          </li>
+          <li>
+            <Link to="/admin/fiscal">🏛️ Configurações Fiscais</Link>
+            <span style={{ opacity: .6 }}> — NFC-e, certificado digital, CSC, dados SEFAZ</span>
           </li>
           <li>
             <Link to="/configuracoes">Configurações</Link>
