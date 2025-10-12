@@ -83,7 +83,7 @@ export default function ProductFormTabs({
   const updateField = (field: string, value: string | number | boolean) => {
     const updated = { ...product, [field]: value } as Partial<ExtendedProduct>
     
-    // Auto-calculate sale price when cost or margin changes
+    // Auto-calculate sale price ONLY when cost or margin changes (not when price is being edited manually)
     if (field === 'costPrice' || field === 'profitMargin') {
       const cost = field === 'costPrice' ? parseFloat(value?.toString() || '0') : parseFloat(product.costPrice?.toString() || '0')
       const margin = field === 'profitMargin' ? parseFloat(value?.toString() || '0') : parseFloat(product.profitMargin?.toString() || '0')
@@ -91,7 +91,10 @@ export default function ProductFormTabs({
       if (cost > 0 && margin > 0) {
         const salePrice = cost * (1 + margin / 100)
         updated.salePrice = salePrice
-        updated.price = salePrice
+        // Para produtos unitários, atualizar price também
+        if (!product.byWeight) {
+          updated.price = salePrice
+        }
       }
     }
 
@@ -282,7 +285,6 @@ export default function ProductFormTabs({
                         }
                       }}
                       placeholder="0.00"
-                      disabled={!product.byWeight}
                     />
                     <small className="form-hint">
                       {product.byWeight ? 'Preço por unidade' : 'Preço unitário final'}

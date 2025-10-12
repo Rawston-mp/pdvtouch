@@ -7,9 +7,9 @@ import KeyboardHelp from '../components/KeyboardHelp'
 import CartSidebar from '../components/CartSidebar'
 import QuickActionsToolbar from '../components/QuickActionsToolbar'
 
-import { listProducts } from '../db/products'
 import { db } from '../db'
 import type { Product } from '../db'
+import { useProductCatalog, useWindowFocusRefresh } from '../hooks/useProductSync'
 import { requestWeight, printText } from '../mock/devices'
 import {
   saveCartDraft,
@@ -76,8 +76,8 @@ export default function VendaRapida() {
   const canFinalize =
     role === 'ADMIN' || role === 'GERENTE' || role === 'CAIXA' || role === 'ATENDENTE'
 
-  // catálogo
-  const [catalog, setCatalog] = useState<Product[]>([])
+  // catálogo com sincronização automática
+  const { products: catalog, loading: catalogLoading, refresh: refreshCatalog } = useProductCatalog()
   const [activeCat, setActiveCat] = useState<Category>('Pratos')
   const [search, setSearch] = useState('')
 
@@ -101,25 +101,23 @@ export default function VendaRapida() {
   const [lockSeconds, setLockSeconds] = useState<number>(0)
   const [releaseReq, setReleaseReq] = useState<{ by: string; ts: number } | null>(null)
 
-  // boot
+  // boot - carrega comanda ativa
   useEffect(() => {
-    ;(async () => {
-      const prods = await listProducts()
-      setCatalog(prods || [])
-
-  const current = getCurrentOrderId(stationNs)
-      if (current != null && current >= 1 && current <= 200) {
-        setOrderId(current)
-        const loaded = loadCartDraft(current)
-        if (loaded) {
-          setCart(loaded.map((d) => ({ ...d, price: num(d.price), qty: num(d.qty) })))
-        }
-      } else if (current != null) {
-        // valor inválido (ex.: 0) encontrado no storage — limpa
-        clearCurrentOrderId(stationNs)
+    const current = getCurrentOrderId(stationNs)
+    if (current != null && current >= 1 && current <= 200) {
+      setOrderId(current)
+      const loaded = loadCartDraft(current)
+      if (loaded) {
+        setCart(loaded.map((d) => ({ ...d, price: num(d.price), qty: num(d.qty) })))
       }
-    })()
+    } else if (current != null) {
+      // valor inválido (ex.: 0) encontrado no storage — limpa
+      clearCurrentOrderId(stationNs)
+    }
   }, [stationNs])
+
+  // Refresh catálogo quando janela ganha foco
+  useWindowFocusRefresh(refreshCatalog)
 
   // Observa lock para indicador visual
   useEffect(() => {
@@ -704,6 +702,13 @@ export default function VendaRapida() {
           onNext={nextClient}
         />
       </div>
+
+      {/* Modal de Ajuda dos Atalhos */}
+      <KeyboardHelp 
+        shortcuts={shortcuts} 
+        isOpen={showHelp} 
+        onClose={() => setShowHelp(false)}
+      />
     </div>
   )
 }
@@ -923,13 +928,6 @@ function LocksList({ stationNs, onOpen }: { stationNs?: string, onOpen: (orderId
           </div>
         </div>
       )}
-      
-      {/* Modal de Ajuda dos Atalhos */}
-      <KeyboardHelp 
-        shortcuts={shortcuts} 
-        isOpen={showHelp} 
-        onClose={() => setShowHelp(false)}
-      />
     </div>
   )
 }

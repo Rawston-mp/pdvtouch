@@ -5,6 +5,7 @@ import { listProducts, upsertProduct, deleteProduct } from '../db/products'
 import { useSession } from '../auth/session'
 import { parseCSV, toCSV } from '../lib/csv'
 import ProductFormTabs from '../components/ProductFormTabs'
+import { notifyProductChange } from '../hooks/useProductSync'
 
 type Category = Product['category']
 const CATEGORIES: { key: Category; label: string }[] = [
@@ -15,12 +16,6 @@ const CATEGORIES: { key: Category; label: string }[] = [
 ]
 
 const money = (n: number | string | null | undefined) => (Number(n || 0)).toFixed(2)
-const parseNum = (v: string | number | null | undefined, fallback = 0): number => {
-  if (typeof v === 'number') return Number.isFinite(v) ? v : fallback
-  if (!v) return fallback
-  const n = Number(String(v).replace(/\./g, '').replace(',', '.'))
-  return Number.isFinite(n) ? n : fallback
-}
 
 export default function AdminProdutos() {
   const { hasRole } = useSession()
@@ -152,8 +147,13 @@ export default function AdminProdutos() {
       if (!name) return setError('Informe o nome do produto.')
       const category = form.category || 'Pratos'
       const byWeight = !!form.byWeight
+      
+      // Para produtos unitários: usar price (campo principal)
+      // Para produtos por peso: usar salePrice (preço unitário) + pricePerKg
       const price = byWeight ? 0 : Math.max(0, form.price || 0)
       const pricePerKg = byWeight ? Math.max(0, form.pricePerKg || 0) : 0
+      const salePrice = byWeight ? Math.max(0, form.salePrice || 0) : (form.price || 0)
+      
       if (!byWeight && price <= 0) return setError('Preço unitário deve ser maior que zero.')
       if (byWeight && pricePerKg <= 0)
         return setError('Preço por Kg deve ser maior que zero para itens por peso.')
@@ -174,7 +174,7 @@ export default function AdminProdutos() {
         costPrice: form.costPrice || 0,
         profitMargin: form.profitMargin || 0,
         mcm: form.mcm || 1,
-        salePrice: form.salePrice || price,
+        salePrice: salePrice,
         cfop: form.cfop || '5102',
         cst: form.cst || '102',
         ncm: form.ncm || '',
@@ -187,6 +187,7 @@ export default function AdminProdutos() {
       await upsertProduct(prod)
       resetForm()
       await load()
+      notifyProductChange() // Notifica outras páginas
     } catch (e) {
       console.error(e)
       setError('Erro ao salvar produto.')
@@ -199,6 +200,7 @@ export default function AdminProdutos() {
     try {
       await deleteProduct(p.id)
       await load()
+      notifyProductChange() // Notifica outras páginas
     } catch (e) {
       console.error(e)
       alert('Erro ao remover produto.')
@@ -210,6 +212,7 @@ export default function AdminProdutos() {
     try {
       await upsertProduct({ ...p, active: !p.active })
       await load()
+      notifyProductChange() // Notifica outras páginas
     } catch (e) {
       console.error(e)
       alert('Erro ao atualizar produto.')
@@ -274,18 +277,18 @@ export default function AdminProdutos() {
         active: 'true',
       },
     ]
-    const csv = toCSV(rows as any, cols)
+    const csv = toCSV(rows, cols)
     download('exemplo_produtos.csv', csv)
   }
 
-  const parseBool = (v: any): boolean => {
+  const parseBool = (v: unknown): boolean => {
     if (typeof v === 'boolean') return v
     if (typeof v === 'number') return v !== 0
     const s = String(v || '').trim().toLowerCase()
     return s === '1' || s === 'true' || s === 'sim' || s === 'yes' || s === 'y'
   }
 
-  const normalizeCategory = (v: any): Category => {
+  const normalizeCategory = (v: unknown): Category => {
     const s = String(v || '').trim()
     const cats = CATEGORIES.map((c) => c.key)
     if (cats.includes(s as Category)) return s as Category
@@ -294,7 +297,7 @@ export default function AdminProdutos() {
     return (found?.key ?? 'Pratos') as Category
   }
 
-  const parseLocaleNumber = (v: any, fallback = 0): number => {
+  const parseLocaleNumber = (v: unknown, fallback = 0): number => {
     if (typeof v === 'number') return Number.isFinite(v) ? v : fallback
     const s = String(v ?? '').trim()
     if (!s) return fallback
@@ -348,6 +351,7 @@ export default function AdminProdutos() {
       setNotice(`Importação concluída. Sucesso: ${ok}. Falhas: ${fail}.`)
       setError('')
       await load()
+      if (ok > 0) notifyProductChange() // Notifica outras páginas se houve alterações
     } catch (e) {
       console.error(e)
       setError('Erro ao importar CSV.')
@@ -385,7 +389,7 @@ export default function AdminProdutos() {
           </div>
           <div>
             <label className="small muted">Categoria</label>
-            <select value={cat} onChange={(e) => setCat(e.target.value as any)}>
+            <select value={cat} onChange={(e) => setCat(e.target.value as Category | 'Todas')}>
               <option value="Todas">Todas</option>
               {CATEGORIES.map((c) => (
                 <option key={c.key} value={c.key}>
