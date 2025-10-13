@@ -1,4 +1,5 @@
 import './utils/theme' // inicializa tema + atalho Alt+D
+import './utils/extensionErrorSuppressor' // silencia erros de extensões
 
 // src/main.tsx
 import React from 'react'
@@ -9,22 +10,20 @@ import './index.css'
 import './App.css'
 import './utils/resetDb' // Adiciona função global de reset
 import './utils/debug' // Adiciona funções de debug
-import './utils/testPermissions' // Adiciona teste de permissões
-import './utils/quickFix' // Adiciona correção rápida
+// import './utils/testPermissions' // Adiciona teste de permissões
+// import './utils/quickFix' // Adiciona correção rápida
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
-    <BrowserRouter>
+    <BrowserRouter
+      future={{
+        v7_startTransition: true,
+        v7_relativeSplatPath: true
+      }}
+    >
       <App />
     </BrowserRouter>
   </React.StrictMode>,
 )
 
-// PWA: registra service worker quando suportado
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker
-      .register('/sw.js')
-      .catch((err) => console.warn('SW register failed', err))
-  })
-}
+// Supressão de erros de extensões já inicializada em extensionErrorSuppressor.ts

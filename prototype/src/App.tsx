@@ -20,6 +20,7 @@ import AdminProdutos from './pages/AdminProdutos'
 import AdminFiscal from './pages/AdminFiscal'
 import PixPage from './pages/Pix' // <<<<<< NOVO
 import Sobre from './pages/Sobre'
+import ThemeToggle from './components/ThemeToggle'
 
 import './App.css'
 import { connectDevices, reconnectDevices } from './mock/devices'
@@ -180,6 +181,7 @@ function Layout() {
           <small style={{ opacity: 0.7 }}>
             {user ? `${user.name} — ${user.role}` : 'Sem sessão'}
           </small>
+          <ThemeToggle />
           {(user && (user.role === 'ADMIN' || user.role === 'GERENTE')) && !isStandalone && (deferredPrompt || import.meta.env.DEV) && (
             <button onClick={onInstallClick} style={{ padding: '4px 10px' }}>Instalar app</button>
           )}
