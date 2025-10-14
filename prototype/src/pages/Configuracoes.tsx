@@ -2,6 +2,7 @@
 import React from 'react'
 import { db } from '../db'
 import { getLockTimings, setLockTimings } from '../lib/cartStorage'
+import ConnectivityTest from '../components/ConnectivityTest'
 
 async function clearIndexedDB(databaseName?: string) {
   return new Promise<void>((resolve) => {
@@ -80,9 +81,16 @@ export default function Configuracoes() {
   return (
     <div style={{ padding: 16 }}>
       <h2>Configurações</h2>
+      
       <div className="card" style={{ maxWidth: 680 }}>
+        <h3 className="card-title">Teste de Conectividade</h3>
+        <p className="muted">Verifica o status das conexões essenciais do sistema (Internet, WebSocket, IndexedDB, etc).</p>
+        <ConnectivityTest />
+      </div>
+
+      <div className="card" style={{ maxWidth: 680, marginTop: 16 }}>
         <h3 className="card-title">Dados locais</h3>
-        <p className="muted">Apaga o banco IndexedDB (pdvtouch-proto) e chaves locais do prefixo “pdv.”.</p>
+        <p className="muted">Apaga o banco IndexedDB (pdvtouch-proto) e chaves locais do prefixo "pdv.".</p>
         <button className="btn" onClick={handleClearAll}>Limpar dados locais</button>
       </div>
 

@@ -31,9 +31,14 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     ;(async () => {
       try {
-        console.log('🔄 Iniciando inicialização da sessão...')
+        // Log apenas em desenvolvimento
+        if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_SESSION) {
+          console.log('🔄 Iniciando inicialização da sessão...')
+        }
         await initDb()
-        console.log('✅ Banco inicializado com sucesso')
+        if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_SESSION) {
+          console.log('✅ Banco inicializado com sucesso')
+        }
         
         const raw = localStorage.getItem(LS_KEY)
         if (raw) {
@@ -41,19 +46,27 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
             const parsed = JSON.parse(raw)
             if (parsed?.user?.id && parsed?.user?.role) {
               setUser(parsed.user)
-              console.log('✅ Sessão restaurada:', parsed.user.name)
+              if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_SESSION) {
+                console.log('✅ Sessão restaurada:', parsed.user.name)
+              }
             }
           } catch {
             localStorage.removeItem(LS_KEY)
-            console.log('⚠️ Sessão inválida removida')
+            if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_SESSION) {
+              console.log('⚠️ Sessão inválida removida')
+            }
           }
         } else {
-          console.log('ℹ️ Nenhuma sessão salva encontrada')
+          if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_SESSION) {
+            console.log('ℹ️ Nenhuma sessão salva encontrada')
+          }
         }
       } catch (error) {
         console.error('❌ Erro ao inicializar sessão:', error)
       } finally {
-        console.log('🎉 Inicialização da sessão concluída')
+        if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_SESSION) {
+          console.log('🎉 Inicialização da sessão concluída')
+        }
         setIsLoaded(true)
       }
     })()

@@ -7,7 +7,10 @@ export function initExtensionErrorSuppression() {
   if (isInitialized) return
   isInitialized = true
 
-  console.log('🔇 Inicializando supressão de erros de extensões...')
+  // Log apenas em desenvolvimento se necessário
+  if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_EXTENSIONS) {
+    console.log('🔇 Inicializando supressão de erros de extensões...')
+  }
 
   // Padrões de erros conhecidos de extensões
   const extensionErrorPatterns = [
@@ -42,7 +45,10 @@ export function initExtensionErrorSuppression() {
         const message = event.message || event.reason?.message || event.reason?.toString() || ''
         
         if (isExtensionError(message)) {
-          console.debug('🔇 Erro de extensão interceptado:', message)
+          // Silenciar sem log (apenas debug se necessário)
+          if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_EXTENSIONS) {
+            console.debug('🔇 Erro de extensão interceptado:', message)
+          }
           event.preventDefault?.()
           event.stopPropagation?.()
           return false
@@ -62,7 +68,7 @@ export function initExtensionErrorSuppression() {
     const message = event.message || ''
     
     if (isExtensionError(message)) {
-      console.debug('🔇 Global error handler - extensão silenciada:', message)
+      // Silenciar sem log
       event.preventDefault()
       event.stopPropagation()
       return false
@@ -74,7 +80,7 @@ export function initExtensionErrorSuppression() {
     const message = event.reason?.message || event.reason?.toString() || ''
     
     if (isExtensionError(message)) {
-      console.debug('🔇 Unhandled rejection - extensão silenciada:', message)
+      // Silenciar sem log
       event.preventDefault()
       return false
     }
@@ -86,7 +92,7 @@ export function initExtensionErrorSuppression() {
     const message = args.join(' ')
     
     if (isExtensionError(message)) {
-      console.debug('🔇 Console.error de extensão silenciado:', message)
+      // Silenciar sem log
       return
     }
     
@@ -99,14 +105,17 @@ export function initExtensionErrorSuppression() {
     const message = args.join(' ')
     
     if (isExtensionError(message)) {
-      console.debug('🔇 Console.warn de extensão silenciado:', message)
+      // Silenciar sem log
       return
     }
     
     originalConsoleWarn.apply(console, args)
   }
 
-  console.log('✅ Supressão de erros de extensões ativada')
+  // Log apenas em desenvolvimento se necessário
+  if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_EXTENSIONS) {
+    console.log('✅ Supressão de erros de extensões ativada')
+  }
 }
 
 // Auto-inicializar

@@ -6,11 +6,12 @@ import { useToast } from '../hooks/useToast'
 import KeyboardHelp from '../components/KeyboardHelp'
 import CartSidebar from '../components/CartSidebar'
 import QuickActionsToolbar from '../components/QuickActionsToolbar'
+import ResizableCart from '../components/ResizableCart'
 
 import { db } from '../db'
 import type { Product } from '../db'
 import { useProductCatalog, useWindowFocusRefresh } from '../hooks/useProductSync'
-import { requestWeight, printText } from '../mock/devices'
+import { requestWeight } from '../mock/devices'
 import {
   saveCartDraft,
   loadCartDraft,
@@ -77,7 +78,7 @@ export default function VendaRapida() {
     role === 'ADMIN' || role === 'GERENTE' || role === 'CAIXA' || role === 'ATENDENTE'
 
   // catálogo com sincronização automática
-  const { products: catalog, loading: catalogLoading, refresh: refreshCatalog } = useProductCatalog()
+  const { products: catalog, refresh: refreshCatalog } = useProductCatalog()
   const [activeCat, setActiveCat] = useState<Category>('Pratos')
   const [search, setSearch] = useState('')
 
@@ -471,6 +472,7 @@ export default function VendaRapida() {
 
   return (
     <div className="container">
+      <div className="venda-layout">
       {/* Aviso especial para balanças */}
       {isBalanca && (
         <div
@@ -597,7 +599,6 @@ export default function VendaRapida() {
         </div>
       </div>
 
-      <div className="venda-layout" style={{ marginRight: '400px' }}>
         {/* Modal de Locks */}
         {showLocks && (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => setShowLocks(false)}>
@@ -679,28 +680,39 @@ export default function VendaRapida() {
           </div>
         </section>
 
-        {/* Carrinho Lateral Fixo */}
-        <CartSidebar
-          cart={cart}
-          total={total}
-          orderActive={orderActive}
-          quickQty={quickQty}
-          pesoItemId={pesoItemId}
-          lockSeconds={lockSeconds}
-          lockOwner={lockOwner}
-          canFinalize={canFinalize}
-          onQuantityChange={setQuickQty}
-          onKeypad={onKeypad}
-          onApplyQuickQty={applyQuickQty}
-          onIncrement={inc}
-          onDecrement={dec}
-          onRemoveItem={removeItem}
-          onClearCart={clear}
-          onReadWeight={lerPeso}
-          onWeightItemChange={setPesoItemId}
-          onFinalize={goToCheckout}
-          onNext={nextClient}
-        />
+        {/* Carrinho Flutuante Redimensionável */}
+        <ResizableCart
+          defaultWidth={320}
+          defaultHeight={500}
+          minWidth={280}
+          minHeight={300}
+          maxWidth={600}
+          maxHeight={700}
+        >
+          <div className="cart-sidebar resizable-cart">
+            <CartSidebar
+              cart={cart}
+              total={total}
+              orderActive={orderActive}
+              quickQty={quickQty}
+              pesoItemId={pesoItemId}
+              lockSeconds={lockSeconds}
+              lockOwner={lockOwner}
+              canFinalize={canFinalize}
+              onQuantityChange={setQuickQty}
+              onKeypad={onKeypad}
+              onApplyQuickQty={applyQuickQty}
+              onIncrement={inc}
+              onDecrement={dec}
+              onRemoveItem={removeItem}
+              onClearCart={clear}
+              onReadWeight={lerPeso}
+              onWeightItemChange={setPesoItemId}
+              onFinalize={goToCheckout}
+              onNext={nextClient}
+            />
+          </div>
+        </ResizableCart>
       </div>
 
       {/* Modal de Ajuda dos Atalhos */}

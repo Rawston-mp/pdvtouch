@@ -18,7 +18,7 @@ import AdminUsuarios from './pages/AdminUsuarios'
 import Configuracoes from './pages/Configuracoes'
 import AdminProdutos from './pages/AdminProdutos'
 import AdminFiscal from './pages/AdminFiscal'
-import PixPage from './pages/Pix' // <<<<<< NOVO
+import PixPage from './pages/Pix'
 import Sobre from './pages/Sobre'
 import ThemeToggle from './components/ThemeToggle'
 
@@ -28,7 +28,6 @@ import { connectDevices, reconnectDevices } from './mock/devices'
 function Layout() {
   const { user, signOut } = useSession()
   const [deferredPrompt, setDeferredPrompt] = React.useState<BeforeInstallPromptEvent | null>(null)
-  const [swUpdate, setSwUpdate] = React.useState<boolean>(false)
   const [isStandalone, setIsStandalone] = React.useState<boolean>(false)
 
   function sair() {
@@ -37,7 +36,7 @@ function Layout() {
     } catch {
       /* noop */
     }
-    window.location.href = '/'
+    // Não força reload - o LoginPin aparecerá automaticamente
   }
 
   // Redirecionamento automático para balanças
@@ -76,22 +75,7 @@ function Layout() {
     }
   }, [])
 
-  // Detecta atualização do SW: mostra toast e botão de atualizar
-  React.useEffect(() => {
-    if (!('serviceWorker' in navigator)) return
-    navigator.serviceWorker.getRegistration().then((reg) => {
-      if (!reg) return
-      reg.addEventListener('updatefound', () => {
-        const installing = reg.installing
-        if (!installing) return
-        installing.addEventListener('statechange', () => {
-          if (installing.state === 'installed' && navigator.serviceWorker.controller) {
-            setSwUpdate(true)
-          }
-        })
-      })
-    })
-  }, [])
+  // Service Worker removido - PWA desabilitado
 
   function onInstallClick() {
     if (deferredPrompt) {
@@ -192,12 +176,6 @@ function Layout() {
       </div>
 
       <div style={{ padding: '8px 12px' }}>
-        {swUpdate && (
-          <div style={toastStyle}>
-            <span>Nova versão disponível</span>
-            <button onClick={() => window.location.reload()}>Atualizar</button>
-          </div>
-        )}
         <Routes>
           <Route path="/" element={<VendaRapida />} />
           <Route path="/venda" element={<VendaRapida />} />
@@ -407,16 +385,4 @@ function linkCls({ isActive }: { isActive: boolean }) {
   return isActive ? 'navlink active' : 'navlink'
 }
 
-const toastStyle: React.CSSProperties = {
-  position: 'fixed',
-  bottom: 12,
-  right: 12,
-  zIndex: 9999,
-  background: '#111',
-  color: '#fff',
-  padding: '10px 12px',
-  borderRadius: 10,
-  display: 'flex',
-  gap: 8,
-  alignItems: 'center',
-}
+// Toast style removido - PWA desabilitado
