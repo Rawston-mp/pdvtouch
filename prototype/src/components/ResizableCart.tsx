@@ -207,17 +207,15 @@ export default function ResizableCart({
   useEffect(() => {
     if (loadedFromStorageRef.current) return
     try {
-      const container = document.querySelector('.container') as HTMLElement | null
-      const qa = document.querySelector('.quick-actions-toolbar') as HTMLElement | null
+  const container = document.querySelector('.container') as HTMLElement | null
       const gap = 12
-      const contRect = container?.getBoundingClientRect()
-      const qaRect = qa?.getBoundingClientRect()
+  const contRect = container?.getBoundingClientRect()
 
       const rightWithin = contRect
         ? contRect.right - size.width - gap
         : window.innerWidth - size.width - gap
       const x = clamp(rightWithin, 0, Math.max(0, window.innerWidth - size.width))
-      const topBase = qaRect ? qaRect.top : contRect ? contRect.top : defaultY
+  const topBase = contRect ? contRect.top : defaultY
       const y = clamp(Math.max(0, topBase + gap), 0, Math.max(0, window.innerHeight - size.height))
 
       setPosition({ x, y })

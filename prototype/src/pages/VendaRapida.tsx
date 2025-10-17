@@ -5,7 +5,6 @@ import { usePDVKeyboard } from '../hooks/useKeyboard'
 import { useToast } from '../hooks/useToast'
 import KeyboardHelp from '../components/KeyboardHelp'
 import CartSidebar from '../components/CartSidebar'
-import QuickActionsToolbar from '../components/QuickActionsToolbar'
 import ResizableCart from '../components/ResizableCart'
 
 import { db } from '../db'
@@ -81,6 +80,8 @@ export default function VendaRapida() {
   const { products: catalog, refresh: refreshCatalog } = useProductCatalog()
   const [activeCat, setActiveCat] = useState<Category>('Pratos')
   const [search, setSearch] = useState('')
+  const [onlyByWeight, setOnlyByWeight] = useState(false)
+  const [sortMode, setSortMode] = useState<'name-asc'|'price-asc'|'price-desc'>('name-asc')
 
   // campo único (comanda ou código/PLU)
   const [unifiedInput, setUnifiedInput] = useState('')
@@ -203,8 +204,13 @@ export default function VendaRapida() {
         (p: Product) => p.name.toLowerCase().includes(s) || (p.code?.toLowerCase?.() === s),
       )
     }
+    if (onlyByWeight) base = base.filter((p) => isByWeight(p))
+    base = [...base]
+    if (sortMode === 'name-asc') base.sort((a,b) => (a.name||'').localeCompare(b.name||''))
+    else if (sortMode === 'price-asc') base.sort((a,b) => num(a.byWeight ? a.pricePerKg ?? a.price : a.price) - num(b.byWeight ? b.pricePerKg ?? b.price : b.price))
+    else if (sortMode === 'price-desc') base.sort((a,b) => num(b.byWeight ? b.pricePerKg ?? b.price : b.price) - num(a.byWeight ? a.pricePerKg ?? a.price : a.price))
     return base
-  }, [catalog, activeCat, search])
+  }, [catalog, activeCat, search, onlyByWeight, sortMode])
 
   const total = useMemo(
     () => cart.reduce((acc, it) => acc + num(it.price) * num(it.qty), 0),
@@ -510,8 +516,7 @@ export default function VendaRapida() {
         </div>
       )}
 
-      {/* Quick Actions Toolbar - Produtos mais vendidos */}
-      <QuickActionsToolbar onProductSelect={addProduct} />
+  {/* Toolbar removida: mantido apenas Catálogo */}
 
       {/* Campo único de comanda/PLU */}
       <div className="card" style={{ marginBottom: 12 }}>
@@ -569,13 +574,21 @@ export default function VendaRapida() {
             </div>
           </div>
 
-          <div className="row" style={{ gap: 8, flex: 1, minWidth: 260 }}>
+          <div className="row" style={{ gap: 8, flex: 1, minWidth: 260, alignItems: 'center', flexWrap: 'wrap' }}>
             <input
               placeholder="Buscar por nome..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              style={{ width: '100%' }}
+              style={{ flex: 1, minWidth: 240 }}
             />
+            <label className="small" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input type="checkbox" checked={onlyByWeight} onChange={(e) => setOnlyByWeight(e.target.checked)} /> Somente por peso
+            </label>
+            <select value={sortMode} onChange={(e) => setSortMode(e.target.value as 'name-asc'|'price-asc'|'price-desc')}>
+              <option value="name-asc">Nome (A–Z)</option>
+              <option value="price-asc">Preço (↑)</option>
+              <option value="price-desc">Preço (↓)</option>
+            </select>
           </div>
         </div>
       </div>
@@ -648,7 +661,7 @@ export default function VendaRapida() {
             <div className="muted">Nenhum item para os filtros atuais.</div>
           )}
 
-          <div className="grid grid-3">
+          <div className="grid grid-4">
             {filtered.map((p) => {
               const weight = isByWeight(p)
               const price = num(p.price)

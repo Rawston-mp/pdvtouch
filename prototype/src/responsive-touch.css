@@ -53,16 +53,7 @@
     font-weight: 600;
   }
   
-  /* Toolbar de ações rápidas */
-  .quick-actions-grid {
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  }
-  
-  .quick-action-btn {
-    padding: 16px;
-    min-height: 60px;
-    border-radius: 12px;
-  }
+  /* (removido) toolbar de ações rápidas */
   
   /* Input de comanda maior */
   .card input[type="text"] {
@@ -372,24 +363,7 @@
     font-size: 15px;
   }
   
-  /* Quick actions em linha única aproveitando largura */
-  .quick-actions-grid {
-    grid-template-columns: repeat(6, 1fr);
-    gap: 12px;
-  }
-  
-  .quick-action-btn {
-    padding: 14px;
-    min-height: 56px;
-  }
-  
-  .quick-action-name {
-    font-size: 14px;
-  }
-  
-  .quick-action-price {
-    font-size: 13px;
-  }
+  /* (removido) quick actions */
   
   /* Categorias mais compactas */
   .pill {
