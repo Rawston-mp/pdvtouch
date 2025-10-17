@@ -41,11 +41,18 @@ export default function LoginPin() {
         if (!logged) {
           setError('PIN inválido ou usuário inativo')
           toast.error('Login falhado', 'PIN inválido ou usuário inativo')
+          // foco rápido para nova tentativa
+          setTimeout(() => {
+            if (inputRef.current) {
+              inputRef.current.focus()
+              inputRef.current.select()
+            }
+          }, 0)
         } else {
           toast.success('Login realizado', `Bem-vindo ao sistema!`)
         }
         return logged
-      })
+      }, { minTime: 0 }) // sem atraso mínimo: resposta imediata
     } catch {
       setError('Falha ao autenticar')
       toast.error('Erro de conexão', 'Falha ao conectar com o sistema')
@@ -64,7 +71,8 @@ export default function LoginPin() {
             pattern="\d*"
             placeholder="Digite seu PIN"
             value={pin}
-            onChange={(e) => setPin(e.target.value)}
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+            maxLength={8}
             style={inp}
             className="input-lg"
           />

@@ -7,8 +7,7 @@ export default defineConfig({
   ],
   server: {
     host: true,
-    port: 3000,
-    strictPort: true,
+    // Porta padrão do Vite: 5173 (sem strictPort para permitir fallback se ocupada)
   },
   define: {
     'import.meta.env.VITE_APP_VERSION': JSON.stringify((globalThis as unknown as { process?: { env?: Record<string,string> } })?.process?.env?.npm_package_version || '0.0.0'),

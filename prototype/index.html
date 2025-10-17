@@ -14,6 +14,66 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- Supressão de erros de extensões (early) -->
+    <script>
+      (function () {
+        var patterns = [
+          'message channel closed',
+          'the message channel closed',
+          'a listener indicated an asynchronous response',
+          'unchecked runtime.lasterror',
+          'runtime.lasterror',
+          'extension context invalidated',
+          'chrome-extension://',
+          'moz-extension://',
+          'safari-extension://',
+          'safari-web-extension://'
+        ];
+        function isExtMsg(msg) {
+          if (!msg) return false;
+          var m = String(msg).toLowerCase();
+          return patterns.some(function (p) { return m.indexOf(p) !== -1; });
+        }
+
+        // window.onerror (retornar true suprime no Chrome)
+        window.onerror = function (message, source, lineno, colno, error) {
+          if (isExtMsg(message) || (error && isExtMsg(error.message))) {
+            return true;
+          }
+        };
+
+        // window.onunhandledrejection
+        window.onunhandledrejection = function (event) {
+          var reason = event && event.reason ? (event.reason.message || String(event.reason)) : '';
+          if (isExtMsg(reason)) {
+            event.preventDefault && event.preventDefault();
+            return true;
+          }
+        };
+
+        // Listeners de captura e borbulha para máxima cobertura
+        function onError(event) {
+          var message = event && event.message ? event.message : '';
+          if (isExtMsg(message)) {
+            event.preventDefault && event.preventDefault();
+            event.stopPropagation && event.stopPropagation();
+            return false;
+          }
+        }
+        function onRejection(event) {
+          var reason = event && event.reason ? (event.reason.message || String(event.reason)) : '';
+          if (isExtMsg(reason)) {
+            event.preventDefault && event.preventDefault();
+            event.stopPropagation && event.stopPropagation();
+            return false;
+          }
+        }
+        window.addEventListener('error', onError, true);
+        window.addEventListener('error', onError, false);
+        window.addEventListener('unhandledrejection', onRejection, true);
+        window.addEventListener('unhandledrejection', onRejection, false);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -30,6 +30,42 @@ function Layout() {
   const [deferredPrompt, setDeferredPrompt] = React.useState<BeforeInstallPromptEvent | null>(null)
   const [isStandalone, setIsStandalone] = React.useState<boolean>(false)
 
+  // Garantir que nenhum Service Worker legado permaneça registrado
+  React.useEffect(() => {
+    let reloaded = false
+    async function nukeServiceWorkers() {
+      try {
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations()
+          for (const reg of regs) {
+            try { await reg.unregister() } catch { /* noop */ }
+          }
+
+          // Se ainda houver um controlador, recarrega uma vez quando ele mudar
+          if (navigator.serviceWorker.controller) {
+            const onChange = () => {
+              if (!reloaded) {
+                reloaded = true
+                window.location.reload()
+              }
+            }
+            navigator.serviceWorker.addEventListener('controllerchange', onChange, { once: true })
+          }
+        }
+        // Limpa caches do domínio (inclui possíveis caches do Workbox)
+        if (typeof caches !== 'undefined') {
+          const keys = await caches.keys()
+          await Promise.all(keys.map((k) => caches.delete(k)))
+        }
+        // Evita SW de dev: garante que não há hints residuais
+        // (nenhuma ação extra necessária porque não registramos SW no app)
+      } catch {
+        // silencioso em produção/dev
+      }
+    }
+    nukeServiceWorkers()
+  }, [])
+
   function sair() {
     try {
       signOut()
@@ -44,6 +80,9 @@ function Layout() {
     if (user && (user.role === 'BALANÇA A' || user.role === 'BALANÇA B')) {
       const currentPath = window.location.pathname
       if (currentPath !== '/venda' && currentPath !== '/') {
+        if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_SESSION && !import.meta.env.VITE_SILENT_SESSION_LOGS) {
+          console.log('➡️ Redirecionando automaticamente para /venda (perfil balança)')
+        }
         window.location.href = '/venda'
       }
     }

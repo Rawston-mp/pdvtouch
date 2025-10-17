@@ -52,6 +52,7 @@ export default function CartSidebar({
   onFinalize,
   onNext
 }: CartSidebarProps) {
+  const hasWeightItems = React.useMemo(() => cart.some((x) => x.unit === 'kg'), [cart])
   return (
     <aside className="cart-sidebar">
       {/* Header com status da venda */}
@@ -76,70 +77,7 @@ export default function CartSidebar({
         </div>
       </div>
 
-      {/* Quantidade Rápida */}
-      <div className="cart-section">
-        <div className="section-header">
-          <h4>Quantidade</h4>
-          <input
-            className="qty-input"
-            type="text"
-            inputMode="numeric"
-            value={quickQty}
-            onChange={(e) => onQuantityChange(e.target.value.replace(/[^\d]/g, '') || '1')}
-            disabled={!orderActive}
-          />
-        </div>
-        
-        <div className="keypad-compact">
-          {['1', '2', '3', '4', '5', '6', '7', '8', '9', '⌫', '0', '✓'].map((k) => (
-            <button 
-              key={k} 
-              className="keypad-btn"
-              disabled={!orderActive} 
-              onClick={() => {
-                if (k === '✓') onApplyQuickQty()
-                else if (k === '⌫') onKeypad('B')
-                else onKeypad(k)
-              }}
-            >
-              {k}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Peso */}
-      <div className="cart-section">
-        <div className="section-header">
-          <h4>⚖️ Balança</h4>
-        </div>
-        <div className="weight-controls">
-          <select
-            className="weight-select"
-            disabled={!orderActive}
-            value={pesoItemId ?? ''}
-            onChange={(e) => onWeightItemChange(e.target.value || null)}
-          >
-            <option value="">Item por peso...</option>
-            {cart
-              .filter((x) => x.unit === 'kg')
-              .map((x) => (
-                <option key={x.id} value={x.id}>
-                  {x.name}
-                </option>
-              ))}
-          </select>
-          <button 
-            className="btn btn-primary btn-touch"
-            disabled={!orderActive || !pesoItemId}
-            onClick={onReadWeight}
-          >
-            Pesar
-          </button>
-        </div>
-      </div>
-
-      {/* Lista do Carrinho */}
+      {/* Lista do Carrinho (prioridade alta) */}
       <div className="cart-section cart-items-section">
         <div className="section-header">
           <h4>Carrinho ({cart.length})</h4>
@@ -211,6 +149,71 @@ export default function CartSidebar({
           )}
         </div>
       </div>
+
+      {/* Quantidade Rápida */}
+      <div className="cart-section">
+        <div className="section-header">
+          <h4>Quantidade</h4>
+          <input
+            className="qty-input"
+            type="text"
+            inputMode="numeric"
+            value={quickQty}
+            onChange={(e) => onQuantityChange(e.target.value.replace(/[^\d]/g, '') || '1')}
+            disabled={!orderActive}
+          />
+        </div>
+        
+        <div className="keypad-compact">
+          {['1', '2', '3', '4', '5', '6', '7', '8', '9', '⌫', '0', '✓'].map((k) => (
+            <button 
+              key={k} 
+              className="keypad-btn"
+              disabled={!orderActive} 
+              onClick={() => {
+                if (k === '✓') onApplyQuickQty()
+                else if (k === '⌫') onKeypad('B')
+                else onKeypad(k)
+              }}
+            >
+              {k}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Peso (exibido somente quando há itens por peso) */}
+      {hasWeightItems && (
+        <div className="cart-section">
+          <div className="section-header">
+            <h4>⚖️ Balança</h4>
+          </div>
+          <div className="weight-controls">
+            <select
+              className="weight-select"
+              disabled={!orderActive}
+              value={pesoItemId ?? ''}
+              onChange={(e) => onWeightItemChange(e.target.value || null)}
+            >
+              <option value="">Item por peso...</option>
+              {cart
+                .filter((x) => x.unit === 'kg')
+                .map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.name}
+                  </option>
+                ))}
+            </select>
+            <button 
+              className="btn btn-primary btn-touch"
+              disabled={!orderActive || !pesoItemId}
+              onClick={onReadWeight}
+            >
+              Pesar
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Total e Ações */}
       <div className="cart-footer">

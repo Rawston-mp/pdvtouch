@@ -470,9 +470,21 @@ export default function VendaRapida() {
   
   const shortcuts = usePDVKeyboard(keyboardActions)
 
+  // Ajustes responsivos para telas com pouca altura (ex.: 11,6" ~ 768px)
+  const smallHeight = typeof window !== 'undefined' ? window.innerHeight <= 820 : false
+  const cartDefaults = React.useMemo(() => ({
+    defaultWidth: smallHeight ? 280 : 300,
+    defaultHeight: smallHeight ? 360 : 420,
+    minWidth: 260,
+    minHeight: smallHeight ? 240 : 280,
+    maxWidth: 520,
+    maxHeight: smallHeight ? Math.min(560, (typeof window !== 'undefined' ? window.innerHeight - 100 : 560)) : 640,
+    defaultY: smallHeight ? 56 : 64,
+  }), [smallHeight])
+
   return (
     <div className="container">
-      <div className="venda-layout">
+      <div className="venda-layout venda-layout--floating">
       {/* Aviso especial para balanças */}
       {isBalanca && (
         <div
@@ -682,14 +694,16 @@ export default function VendaRapida() {
 
         {/* Carrinho Flutuante Redimensionável */}
         <ResizableCart
-          defaultWidth={320}
-          defaultHeight={500}
-          minWidth={280}
-          minHeight={300}
-          maxWidth={600}
-          maxHeight={700}
+          defaultWidth={cartDefaults.defaultWidth}
+          defaultHeight={cartDefaults.defaultHeight}
+          minWidth={cartDefaults.minWidth}
+          minHeight={cartDefaults.minHeight}
+          maxWidth={cartDefaults.maxWidth}
+          maxHeight={cartDefaults.maxHeight}
+          defaultY={cartDefaults.defaultY}
+          storageKey="pdv.ui.cart.VendaRapida"
         >
-          <div className="cart-sidebar resizable-cart">
+          <div className="resizable-cart">
             <CartSidebar
               cart={cart}
               total={total}

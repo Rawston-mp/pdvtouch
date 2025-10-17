@@ -1,5 +1,6 @@
 // src/db/index.ts
 import Dexie, { Table } from 'dexie'
+import type { CartItem } from '../lib/cartStorage'
 
 // Tipos base
 export type Destination = 'CLIENTE' | 'COZINHA' | 'BAR'
@@ -91,7 +92,7 @@ export type Sale = {
   userId: string
   userName: string
   userRole: string
-  items: any[]
+  items: CartItem[]
   total: number
   payments: {
     cash: number
@@ -145,13 +146,18 @@ class PDVDB extends Dexie {
 export const db = new PDVDB()
 
 // Garante que o banco esteja aberto antes de operações de escrita/leitura críticas
-export async function ensureDbOpen() {
+export async function ensureDbOpen(timeoutMs = 4000) {
   try {
-    if (!db.isOpen()) {
-      await db.open()
-    }
+    if (db.isOpen()) return
+    const openPromise = db.open()
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      const id = setTimeout(() => {
+        clearTimeout(id)
+        reject(new Error('Timeout ao abrir o banco de dados. Feche outras abas/janelas e recarregue.'))
+      }, timeoutMs)
+    })
+    await Promise.race([openPromise, timeoutPromise])
   } catch (err: unknown) {
-    // Repassa com mensagem mais clara
     const e = err as { name?: string }
     if (e?.name === 'UpgradeBlockedError') {
       throw new Error('Atualização do banco bloqueada. Feche outras abas/janelas do app e recarregue.')
@@ -162,9 +168,28 @@ export async function ensureDbOpen() {
 
 // Util: hash de PIN (SHA-256 → hex)
 export async function hashPin(pin: string): Promise<string> {
-  const enc = new TextEncoder().encode(pin)
-  const buf = await crypto.subtle.digest('SHA-256', enc)
-  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('')
+  // Tenta usar Web Crypto (requer contexto seguro: https/localhost)
+  try {
+    if (crypto?.subtle && typeof crypto.subtle.digest === 'function') {
+      const enc = new TextEncoder().encode(pin)
+      const buf = await crypto.subtle.digest('SHA-256', enc)
+      return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('')
+    }
+  } catch {
+    // Ignora e cai no fallback
+  }
+  // Fallback: hash determinístico simples (djb2/xor) — NÃO criptográfico, apenas para protótipo
+  let h = 5381 >>> 0
+  for (let i = 0; i < pin.length; i++) {
+    h = (((h << 5) + h) ^ pin.charCodeAt(i)) >>> 0
+  }
+  // Converte para hex de 8 bytes repetidos para manter tamanho próximo a SHA-256
+  const hex = ('00000000' + h.toString(16)).slice(-8)
+  const out = (hex + hex + hex + hex).slice(0, 64)
+  if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_SESSION && !import.meta.env.VITE_SILENT_SESSION_LOGS) {
+    console.warn('⚠️ crypto.subtle indisponível — usando hash de fallback para PIN (ambiente não seguro?)')
+  }
+  return out
 }
 
 // Seeds
@@ -297,18 +322,22 @@ async function seedUsers(d: PDVDB) {
   )
 }
 
-// Garantia suave: assegura que as balanças existam, estejam ativas e com PINs padrão
-async function ensureBalancaUsers(d: PDVDB) {
-  const targets: Array<{ name: string; role: Role; pin: string }> = [
+// Assegura usuários padrão com PINs conhecidos; não apaga outros
+async function ensureDefaultUsers(d: PDVDB) {
+  const seeds: Array<{ name: string; role: Role; pin: string }> = [
+    { name: 'Admin', role: 'ADMIN', pin: '1111' },
     { name: 'Balança A', role: 'BALANÇA A', pin: '2222' },
     { name: 'Balança B', role: 'BALANÇA B', pin: '2233' },
+    { name: 'Gerente', role: 'GERENTE', pin: '3333' },
+    { name: 'Caixa', role: 'CAIXA', pin: '4444' },
+    { name: 'Atendente', role: 'ATENDENTE', pin: '5555' },
   ]
-  for (const t of targets) {
+  let created = 0
+  let updated = 0
+  for (const t of seeds) {
     const expectedHash = await hashPin(t.pin)
-    // Busca por role (indexado)
-  const u = await d.users.where('role').equals(t.role).first()
+    const u = await d.users.where('role').equals(t.role).first()
     if (!u) {
-      // criar
       await d.users.put({
         id: crypto.randomUUID(),
         name: t.name,
@@ -316,26 +345,34 @@ async function ensureBalancaUsers(d: PDVDB) {
         active: true,
         pinHash: expectedHash,
       })
+      created++
       console.log(`✅ [initDb] Criado usuário padrão: ${t.name} (${t.pin})`)
     } else {
-      // atualizar se necessário
       const patch: Partial<User> = {}
-      if (u.name !== t.name) patch.name = t.name
+      // Não alteramos o nome se já existe (evita sobrescrever nomes reais), apenas garantimos PIN e ativo
       if (!u.active) patch.active = true
       if (u.pinHash !== expectedHash) patch.pinHash = expectedHash
       if (Object.keys(patch).length > 0) {
         await d.users.update(u.id, patch)
-        console.log(`🔧 [initDb] Ajustado usuário ${u.name}: ${
+        updated++
+        console.log(`🔧 [initDb] Ajustes em ${u.name} (${u.role}): ${
           patch.pinHash ? 'PIN atualizado' : ''
-        }${patch.active ? ' • reativado' : ''}${patch.name ? ' • nome ajustado' : ''}`)
+        }${patch.active ? ' • reativado' : ''}`)
       }
     }
   }
+  return { created, updated }
+}
+
+// Expõe util de reparo para UI
+export async function repairDefaultUsers() {
+  await db.open()
+  return ensureDefaultUsers(db)
 }
 
 // Init idempotente
 export async function initDb() {
-  await db.open()
+  await ensureDbOpen()
 
   // Verifica se já foi inicializado
   const cfg = await db.settings.get('cfg')
@@ -349,11 +386,14 @@ export async function initDb() {
     await seedUsers(db)
   }
 
-  // Garante que as balanças A/B estejam utilizáveis com PINs conhecidos
+  // Garante que os usuários padrão estejam utilizáveis com PINs conhecidos
   try {
-    await ensureBalancaUsers(db)
+    const r = await ensureDefaultUsers(db)
+    if (r.created || r.updated) {
+      console.log(`✅ Usuários padrão assegurados (criados: ${r.created}, ajustados: ${r.updated})`)
+    }
   } catch (e) {
-    console.warn('⚠️ Não foi possível assegurar usuários de Balança A/B:', e)
+    console.warn('⚠️ Não foi possível assegurar usuários padrão:', e)
   }
 
   console.log(`✅ Banco inicializado. Usuários: ${await db.users.count()}`)

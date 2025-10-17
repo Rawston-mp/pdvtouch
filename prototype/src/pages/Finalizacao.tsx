@@ -10,9 +10,29 @@ import { clearUsage } from '../lib/comandaUsage'
 
 type DocType = 'NAO_FISCAL' | 'NFCE'
 
+// Parser numérico robusto a formatos pt-BR (vírgula) e símbolos
 const toNumber = (v: unknown, fallback = 0) => {
-  const n = typeof v === 'number' ? v : Number(v as number | string)
-  return Number.isFinite(n) ? n : fallback
+  if (typeof v === 'number') return Number.isFinite(v) ? v : fallback
+  if (typeof v === 'string') {
+    const raw = v.trim()
+    if (!raw) return fallback
+    // Remove espaços/símbolos e lida com vírgula decimal (pt-BR)
+    // Heurística: se contém vírgula e ponto, assume ponto como separador de milhar
+    let s = raw.replace(/[^0-9.,+-]/g, '') // mantém dígitos, vírgula e ponto
+    const hasComma = s.includes(',')
+    const hasDot = s.includes('.')
+    if (hasComma && hasDot) {
+      // remove milhares (.) e converte vírgula em ponto
+      s = s.replace(/\./g, '').replace(/,/g, '.')
+    } else if (hasComma && !hasDot) {
+      // apenas vírgula → decimal
+      s = s.replace(/,/g, '.')
+    }
+    // Agora deve restar apenas notação com ponto decimal
+    const n = Number(s)
+    return Number.isFinite(n) ? n : fallback
+  }
+  return fallback
 }
 const money = (v: unknown) => toNumber(v).toFixed(2)
 
@@ -91,6 +111,23 @@ export default function Finalizacao() {
   )
   const falta = useMemo(() => Math.max(0, total - pagos), [total, pagos])
 
+  // Validações para habilitar o botão de confirmar
+  const TOL = 0.009
+  const hasOrder = orderId != null
+  const hasItems = cart.length > 0
+  const totalsMatch = Math.abs(total - pagos) <= TOL
+  const subtotalVal = toNumber(subtotalInfo)
+  const subtotalOk = subtotalVal === 0 || Math.abs(subtotalVal - total) <= TOL
+  const canConfirm = hasOrder && hasItems && totalsMatch && subtotalOk
+
+  const getConfirmBlockReason = () => {
+    if (!hasOrder) return 'Informe/escaneie a comanda para finalizar.'
+    if (!hasItems) return 'Comanda vazia.'
+    if (!subtotalOk) return 'O subtotal informado não confere com o total.'
+    if (!totalsMatch) return `Os pagamentos (R$ ${money(pagos)}) não fecham com o total (R$ ${money(total)}).`
+    return 'Preenchimentos pendentes.'
+  }
+
   // (não retornar aqui para não quebrar a ordem dos hooks)
 
   // Carregar por comanda/leitor
@@ -141,7 +178,8 @@ export default function Finalizacao() {
       const isEnter = e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter'
       if ((e.ctrlKey || e.metaKey) && isEnter) {
         e.preventDefault()
-        confirmar()
+        if (canConfirm) confirmar()
+        else alert(getConfirmBlockReason())
       }
       if (e.key === 'Escape') {
         e.preventDefault()
@@ -155,7 +193,7 @@ export default function Finalizacao() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [total, vCash, vPix, vTef, cart, orderId, doc, idFiscal])
+  }, [total, vCash, vPix, vTef, cart, orderId, doc, idFiscal, subtotalInfo, canConfirm])
 
   // Persistir rascunho quando caixa altera itens
   useEffect(() => {
@@ -303,7 +341,8 @@ export default function Finalizacao() {
     const isEnter = e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter'
     if ((e.ctrlKey || e.metaKey) && isEnter) {
       e.preventDefault()
-      confirmar()
+      if (canConfirm) confirmar()
+      else alert(getConfirmBlockReason())
     }
     if (e.key === 'Escape') {
       e.preventDefault()
@@ -563,10 +602,23 @@ export default function Finalizacao() {
             <button onClick={() => nav('/venda')} className="btn">
               Voltar
             </button>
-            <button className="btn btn-primary" onClick={confirmar} title="Ctrl+Enter">
+            <button
+              className="btn btn-primary"
+              onClick={confirmar}
+              title={canConfirm ? 'Ctrl+Enter' : 'Ajuste pagamentos/subtotal para fechar com o total'}
+              disabled={!canConfirm}
+            >
               Confirmar pagamento (Ctrl+Enter)
             </button>
           </div>
+          {!canConfirm && (
+            <div className="small muted" style={{ marginTop: 6 }}>
+              {(!hasOrder) && 'Informe/escaneie a comanda. '}
+              {(!hasItems) && 'Comanda vazia. '}
+              {hasItems && hasOrder && !subtotalOk && 'O subtotal informado não confere com o total. '}
+              {hasItems && hasOrder && subtotalOk && !totalsMatch && `Os pagamentos (R$ ${money(pagos)}) não fecham com o total (R$ ${money(total)}).`}
+            </div>
+          )}
           <p className="muted small" style={{ marginTop: 4 }}>
             Dica: atalho de teclado — Ctrl+Enter (Windows/Linux) ou ⌘+Enter (macOS) para confirmar.
           </p>

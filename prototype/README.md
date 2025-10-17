@@ -11,6 +11,29 @@ App React + Vite com suporte a PWA, operação offline e mock de dispositivos (b
 - `npm run dev:all`: inicia app + WS (requer concurrently)
 - `npm run build` / `npm run preview`: build de produção e pré-visualização
 
+#### Notas de desenvolvimento (Service Worker e portas)
+
+Este protótipo não utiliza PWA em desenvolvimento. Caso exista um Service Worker legado ativo, podem surgir erros como:
+
+```
+dev-sw.js:111 API_PREFIX is not defined
+```
+
+Para evitar isso, o `App.tsx` desregistra automaticamente quaisquer Service Workers da origem e limpa todos os caches (incluindo Workbox) ao iniciar. Se houver um controlador SW, a página recarrega uma única vez ao trocar o controlador.
+
+Sinais de SW legado:
+- Erros em `dev-sw.js` ou `workbox-*.js`
+- Recursos sendo servidos do cache após alterações
+
+Solução manual (se necessário):
+1. DevTools > Application > Service Workers > Unregister
+2. Application > Clear storage > marque todas opções > Clear site data
+3. Hard Reload (Ctrl+F5)
+
+Portas:
+- Padrão do Vite: `5173`. Se ocupada, o Vite usa outra (ex.: `5174`).
+- Os scripts não fixam porta para facilitar o desenvolvimento.
+
 ### Variáveis de ambiente
 Crie `.env.local` (ou use `.env.example` como base):
 

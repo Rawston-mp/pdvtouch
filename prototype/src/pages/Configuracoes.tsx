@@ -1,6 +1,6 @@
 // src/pages/Configuracoes.tsx
 import React from 'react'
-import { db } from '../db'
+import { db, repairDefaultUsers } from '../db'
 import { getLockTimings, setLockTimings } from '../lib/cartStorage'
 import ConnectivityTest from '../components/ConnectivityTest'
 
@@ -39,6 +39,8 @@ export default function Configuracoes() {
   const [ttlMs, setTtlMs] = React.useState<number>(getLockTimings().ttlMs)
   const [hbMs, setHbMs] = React.useState<number>(getLockTimings().heartbeatMs)
   const [saved, setSaved] = React.useState<string>('')
+  const [cleared, setCleared] = React.useState<string>('')
+  const [repairMsg, setRepairMsg] = React.useState<string>('')
 
   function saveLockTimings() {
     if (!Number.isFinite(ttlMs) || ttlMs <= 0 || !Number.isFinite(hbMs) || hbMs <= 0) {
@@ -78,6 +80,28 @@ export default function Configuracoes() {
     }
   }
 
+  function resetCartPositions() {
+    try {
+      const keys = Object.keys(localStorage)
+      const toRemove = keys.filter((k) => k.startsWith('pdv.ui.cart.') || k === 'pdv.ui.resizableCart')
+      toRemove.forEach((k) => localStorage.removeItem(k))
+      setCleared(`Resetado (${toRemove.length})`)
+      setTimeout(() => setCleared(''), 1200)
+    } catch (err) { void err }
+  }
+
+  async function handleRepairUsers() {
+    try {
+      const { created, updated } = await repairDefaultUsers()
+      setRepairMsg(`Feito. Criados: ${created} • Ajustados: ${updated}`)
+      setTimeout(() => setRepairMsg(''), 2000)
+    } catch (e) {
+      console.error(e)
+      setRepairMsg('Falha ao reparar usuários. Veja o console.')
+      setTimeout(() => setRepairMsg(''), 3000)
+    }
+  }
+
   return (
     <div style={{ padding: 16 }}>
       <h2>Configurações</h2>
@@ -92,6 +116,24 @@ export default function Configuracoes() {
         <h3 className="card-title">Dados locais</h3>
         <p className="muted">Apaga o banco IndexedDB (pdvtouch-proto) e chaves locais do prefixo "pdv.".</p>
         <button className="btn" onClick={handleClearAll}>Limpar dados locais</button>
+      </div>
+
+      <div className="card" style={{ maxWidth: 680, marginTop: 16 }}>
+        <h3 className="card-title">UI do Carrinho</h3>
+        <p className="muted">Redefine a posição/tamanho salvos do carrinho flutuante.</p>
+        <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+          <button className="btn" onClick={resetCartPositions}>Resetar posição do carrinho</button>
+          {cleared && <span className="small" style={{ color: '#16a34a' }}>{cleared}</span>}
+        </div>
+      </div>
+
+      <div className="card" style={{ maxWidth: 680, marginTop: 16 }}>
+        <h3 className="card-title">Usuários padrão</h3>
+        <p className="muted">Repara/cria usuários padrão com PINs conhecidos (não remove outros).</p>
+        <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+          <button className="btn" onClick={handleRepairUsers}>Reparar usuários padrão</button>
+          {repairMsg && <span className="small" style={{ color: '#16a34a' }}>{repairMsg}</span>}
+        </div>
       </div>
 
       <div className="card" style={{ maxWidth: 680, marginTop: 16 }}>
