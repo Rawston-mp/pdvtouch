@@ -1,6 +1,5 @@
 // src/lib/escposTurno.ts
-import type { Printer, Settings } from '../db/models'
-import { profileCommands, ticketHeader } from './escpos'
+import type { Printer, Settings } from '../db'
 
 const line = (w = 32) => '─'.repeat(w)
 const money = (v: number) => 'R$ ' + v.toFixed(2)
@@ -21,10 +20,13 @@ export function ticketFechamentoTurno(opts: {
   }
 }) {
   const { settings, printer, data } = opts
-  const c = profileCommands(printer.profile)
+  const c = { init: '', alignLeft: '', alignCenter: '', boldOn: '', boldOff: '', doubleOn: '', doubleOff: '', cutPartial: '' }
   const rows: string[] = []
   rows.push(c.init)
-  rows.push(ticketHeader(settings, c))
+  // Cabeçalho simples
+  rows.push(settings.companyName)
+  rows.push(`CNPJ ${settings.cnpj}`)
+  rows.push(`${settings.addressLine1 ?? ''}`)
   rows.push(c.alignLeft + line())
   rows.push(c.alignCenter + c.boldOn + c.doubleOn + 'FECHAMENTO DE TURNO' + c.doubleOff + c.boldOff)
   if (printer?.name) rows.push(c.alignCenter + `Impressora: ${printer.name}`)

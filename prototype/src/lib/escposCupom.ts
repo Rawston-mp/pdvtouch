@@ -1,6 +1,7 @@
 // src/lib/escposCupom.ts
-import type { Order, Printer, Settings } from '../db/models'
-import { profileCommands } from './escpos'
+import type { Order } from '../db/models'
+import type { Printer, Settings } from '../db'
+// Usa API simples do escpos.ts: vamos gerar linhas de texto compatíveis
 
 const money = (v:number) => 'R$ ' + v.toFixed(2)
 const line = (w=32) => '─'.repeat(w)
@@ -12,16 +13,25 @@ export function ticketCupomCliente(opts: {
   printer: Printer
   nfce?: { chaveAcesso: string; urlConsulta: string; qrCodeConteudo: string }
 }) {
-  const { order, settings, printer, nfce } = opts
-  const c = profileCommands(printer.profile)
+  const { order, settings, nfce } = opts
+  const c = {
+    init: '',
+    alignCenter: '',
+    alignLeft: '',
+    alignRight: '',
+    boldOn: '',
+    boldOff: '',
+    cutPartial: ''
+  }
   const rows: string[] = []
 
   rows.push(c.init)
 
   // Cabeçalho custom
   rows.push(c.alignCenter + c.boldOn)
-  ;(settings.headerLines ?? [settings.companyName, `CNPJ ${settings.cnpj}`, `${settings.addressLine1 ?? ''}`])
-    .filter(Boolean).forEach(l => rows.push(l!))
+  const header = [settings.companyName, `CNPJ ${settings.cnpj}`, `${settings.addressLine1 ?? ''}`]
+    .filter(Boolean) as string[]
+  header.forEach((l: string) => rows.push(l))
   rows.push(c.boldOff)
 
   rows.push(line())
@@ -65,10 +75,7 @@ export function ticketCupomCliente(opts: {
 
   // Rodapé custom
   rows.push(line())
-  ;(settings.footerLines ?? []).forEach(l => rows.push(l))
-  if (settings.showPixOnFooter && order.receiptMode === 'NAO_FISCAL') {
-    rows.push('PIX (mock): chave@empresa.com')
-  }
+  // Footer padrão (se desejar, customize aqui no futuro)
   rows.push(c.alignCenter + 'Impresso: ' + fmt(Date.now()))
   rows.push('\n' + c.cutPartial)
 

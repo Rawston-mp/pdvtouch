@@ -192,6 +192,27 @@ export async function hashPin(pin: string): Promise<string> {
   return out
 }
 
+// Retorna ambas variantes: sha256 (se disponível) e fallback determinístico
+export async function hashPinBoth(pin: string): Promise<{ sha256?: string; fallback: string }> {
+  let fallback!: string
+  // compute fallback determinístico
+  {
+    let h = 5381 >>> 0
+    for (let i = 0; i < pin.length; i++) h = (((h << 5) + h) ^ pin.charCodeAt(i)) >>> 0
+    const hex = ('00000000' + h.toString(16)).slice(-8)
+    fallback = (hex + hex + hex + hex).slice(0, 64)
+  }
+  try {
+    if (crypto?.subtle && typeof crypto.subtle.digest === 'function') {
+      const enc = new TextEncoder().encode(pin)
+      const buf = await crypto.subtle.digest('SHA-256', enc)
+      const sha = [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('')
+      return { sha256: sha, fallback }
+    }
+  } catch { /* noop */ }
+  return { fallback }
+}
+
 // Seeds
 async function seedAll(d: PDVDB) {
   // Settings

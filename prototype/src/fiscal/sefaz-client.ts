@@ -375,7 +375,7 @@ export class SEFAZClient {
       
       const cStat = xmlDoc.querySelector('cStat')?.textContent || '';
       const xMotivo = xmlDoc.querySelector('xMotivo')?.textContent || '';
-      const nRec = xmlDoc.querySelector('nRec')?.textContent;
+  const nRec = xmlDoc.querySelector('nRec')?.textContent || undefined;
       
       return {
         success: cStat === '103', // Lote recebido com sucesso
@@ -405,9 +405,9 @@ export class SEFAZClient {
       
       const cStat = xmlDoc.querySelector('cStat')?.textContent || '';
       const xMotivo = xmlDoc.querySelector('xMotivo')?.textContent || '';
-      const nProt = xmlDoc.querySelector('nProt')?.textContent;
-      const dhRecbto = xmlDoc.querySelector('dhRecbto')?.textContent;
-      const chNFe = xmlDoc.querySelector('chNFe')?.textContent;
+  const nProt = xmlDoc.querySelector('nProt')?.textContent || undefined;
+  const dhRecbto = xmlDoc.querySelector('dhRecbto')?.textContent || undefined;
+  const chNFe = xmlDoc.querySelector('chNFe')?.textContent || undefined;
       
       return {
         success: cStat === '100', // Autorizado o uso da NF-e
@@ -439,7 +439,7 @@ export class SEFAZClient {
       
       const cStat = xmlDoc.querySelector('cStat')?.textContent || '';
       const xMotivo = xmlDoc.querySelector('xMotivo')?.textContent || '';
-      const nProt = xmlDoc.querySelector('nProt')?.textContent;
+  const nProt = xmlDoc.querySelector('nProt')?.textContent || undefined;
       
       return {
         success: ['135', '136', '155'].includes(cStat), // Eventos aceitos
@@ -469,7 +469,7 @@ export class SEFAZClient {
       
       const cStat = xmlDoc.querySelector('cStat')?.textContent || '';
       const xMotivo = xmlDoc.querySelector('xMotivo')?.textContent || '';
-      const nProt = xmlDoc.querySelector('nProt')?.textContent;
+  const nProt = xmlDoc.querySelector('nProt')?.textContent || undefined;
       
       return {
         success: cStat === '102', // Inutilização de número homologado

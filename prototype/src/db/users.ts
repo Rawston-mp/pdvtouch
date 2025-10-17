@@ -1,5 +1,5 @@
 // src/db/users.ts
-import { db, hashPin, ensureDbOpen, type Role, type User } from './index'
+import { db, hashPin, hashPinBoth, ensureDbOpen, type Role, type User } from './index'
 
 const DBG = import.meta.env.DEV && !!import.meta.env.VITE_DEBUG_SESSION && !import.meta.env.VITE_SILENT_SESSION_LOGS
 
@@ -62,15 +62,21 @@ export async function deleteUser(id: string) {
 export async function findByPin(pin: string): Promise<User | undefined> {
   try {
     await ensureDbOpen()
-    const h = await hashPin(pin)
+    const { sha256, fallback } = await hashPinBoth(pin)
     // Primeiro tenta via cache em memória (rápido e sem depender de índice)
     await ensureCache()
-    const cached = pinCache?.get(h)
+    const c1 = sha256 ? pinCache?.get(sha256) : undefined
+    const c2 = pinCache?.get(fallback)
+    const cached = c1 ?? c2
     if (cached && cached.active) { if (DBG) console.log('🔎 Login via cache de PIN: HIT'); return cached }
     // Fallback: filtra na store por active e compara hash (compatível sem índice)
-    const match = await db.users.filter((u) => u.active && u.pinHash === h).first()
+    const match = await db.users.filter((u) => u.active && (u.pinHash === sha256 || u.pinHash === fallback)).first()
     // Atualiza cache para próximas consultas
-    if (match) { pinCache?.set(h, match); if (DBG) console.log('🔎 Login via varredura: MATCH encontrado') }
+    if (match) {
+      if (sha256) pinCache?.set(sha256, match)
+      pinCache?.set(fallback, match)
+      if (DBG) console.log('🔎 Login via varredura: MATCH encontrado')
+    }
     else {
       if (DBG) {
         const total = await db.users.count()

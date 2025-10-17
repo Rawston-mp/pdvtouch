@@ -10,24 +10,22 @@ export default function Impressao() {
     try {
       setStatus('Gerando cupom do cliente...')
       const bytes = buildCustomerCoupon({
-        header: {
-          name: 'PDVTouch Restaurante',
-          cnpj: '00.000.000/0000-00',
-          addr1: 'Av. Exemplo, 123',
-          addr2: 'Cidade/UF',
-        },
+        title: 'PDVTouch Restaurante',
         items: [
-          { name: 'Buffet', qty: 0.701, unit: 'KG', price: 69.90, total: 49.00 },
-          { name: 'Suco Natural 300ml', qty: 1, unit: 'UN', price: 8.00, total: 8.00 },
+          { name: 'Buffet', qty: 0.701, price: 69.90, total: 49.00 },
+          { name: 'Suco Natural 300ml', qty: 1, price: 8.00, total: 8.00 },
         ],
-        totals: { subtotal: 57.00, total: 57.00 },
-        footer: 'Volte sempre!',
+        total: 57.00,
+        orderId: 123,
+        timestamp: Date.now(),
+        footer: ['Volte sempre!'],
       })
       setStatus('Enviando para impressora (CAIXA)...')
       await printRaw(bytes, 'CAIXA')
       setStatus('Cupom do cliente impresso com sucesso (mock).')
-    } catch (e: any) {
-      setStatus(`Erro: ${e.message ?? e}`)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setStatus(`Erro: ${msg}`)
     }
   }
 
@@ -35,39 +33,32 @@ export default function Impressao() {
     try {
       setStatus('Gerando ticket de cozinha...')
       const bytes = ticketKitchen({
-        header: { name: 'PDVTouch Restaurante' },
-        destination: 'COZINHA',
-        orderId: '123',
-        timestamp: new Date().toLocaleString(),
+        title: 'PDVTouch Restaurante — COZINHA',
+        orderId: 123,
         items: [
-          { name: 'Picanha', qty: 2, notes: 'mal passado' },
-          { name: 'Batata frita', qty: 1 },
+          { name: 'Picanha', qty: 2, price: 0, total: 0 },
+          { name: 'Batata frita', qty: 1, price: 0, total: 0 },
         ],
       })
       setStatus('Enviando para impressora (COZINHA)...')
       await printRaw(bytes, 'COZINHA')
       setStatus('Ticket de cozinha impresso com sucesso (mock).')
-    } catch (e: any) {
-      setStatus(`Erro: ${e.message ?? e}`)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setStatus(`Erro: ${msg}`)
     }
   }
 
   async function imprimirTef() {
     try {
       setStatus('Gerando comprovante TEF...')
-      const bytes = tefReceipt({
-        header: { name: 'PDVTouch Restaurante' },
-        total: 49.90,
-        nsu: '123456',
-        brand: 'VISA',
-        authCode: 'A1B2C3',
-        installments: 1,
-      })
+      const bytes = tefReceipt({ total: 49.90, nsu: '123456', brand: 'VISA' })
       setStatus('Enviando para impressora (CAIXA)...')
       await printRaw(bytes, 'CAIXA')
       setStatus('Comprovante TEF impresso com sucesso (mock).')
-    } catch (e: any) {
-      setStatus(`Erro: ${e.message ?? e}`)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setStatus(`Erro: ${msg}`)
     }
   }
 
